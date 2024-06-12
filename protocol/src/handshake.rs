@@ -1,16 +1,50 @@
 use std::io::{self, Read, Write};
-use byteorder::{NetworkEndian, WriteBytesExt, ReadBytesExt};
-use super::utils::{DeserializePacket, extract_string, SerializePacket};
+
+use edcert::certificate::Certificate;
+use byteorder::{WriteBytesExt, ReadBytesExt};
+
+use super::utils::{DeserializePacket, SerializePacket};
+
+pub enum ConnectionType {
+    Unknown = 0,
+    Client = 1,
+    Server = 2
+}
+
+impl ConnectionType {
+    fn from_u8(t: u8) -> io::Result<ConnectionType> {
+        match t {
+            1 => Ok(ConnectionType::Client),
+            2 => Ok(ConnectionType::Server),
+            _ => io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Invalid Connection Type"
+            )
+        }
+    }
+}
+
+impl From<&ConnectionType> for u8 {
+    fn from(t: &ConnectionType) -> Self {
+        match t {
+            ConnectionType::Client => 1,
+            ConnectionType::Server => 2,
+        }
+    }
+}
 
 pub enum OSPHandshakeIn {
-    Hello {},
+    Hello {
+        connection_type: ConnectionType,
+    },
+    Login {},
 }
 
 impl From<&OSPHandshakeIn> for u8 {
     fn from(req: &OSPHandshakeIn) -> Self {
         match req {
             OSPHandshakeIn::Hello { .. } => 1,
-            // OSPHandshake::InstallProject { .. } => 2,
+            OSPHandshakeIn::Login { .. } => 2,
         }
     }
 }
@@ -21,8 +55,12 @@ impl SerializePacket for OSPHandshakeIn {
         buf.write_u8(self.into())?; // Message Type byte
         let mut bytes_written: usize = 1;
         match self {
-            OSPHandshakeIn::Hello {} => {
-                // NODATA
+            OSPHandshakeIn::Hello { connection_type } => {
+                buf.write_u8(u8::from(connection_type))?;
+                bytes_written += 1
+            }
+            OSPHandshakeIn::Login {  } => {
+
             }
             // OSPHandshake::SyncProject { root_dir } => {
             //     // Write the variable length message string, preceded by it's length
@@ -52,7 +90,10 @@ impl DeserializePacket for OSPHandshakeIn {
     fn deserialize(mut buf: &mut impl Read) -> io::Result<OSPHandshakeIn> {
         // We'll match the same `u8` that is used to recognize which request type this is
         match buf.read_u8()? {
-            1 => Ok(OSPHandshakeIn::Hello {}),
+            1 => Ok(OSPHandshakeIn::Hello {
+                connection_type: ConnectionType::from_u8(buf.read_u8()?)?
+            }),
+            2 => Ok(OSPHandshakeIn::Login {}),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid Request Type",
@@ -64,6 +105,11 @@ impl DeserializePacket for OSPHandshakeIn {
 pub enum OSPHandshakeOut {
     Acknowledge {
         ok: bool,
+        require_login: bool,
+        err: Option<String>,
+    },
+    LoginResponse {
+        ok: bool,
         err: Option<String>,
     }
 }
@@ -72,6 +118,7 @@ impl From<&OSPHandshakeOut> for u8 {
     fn from(req: &OSPHandshakeOut) -> Self {
         match req {
             OSPHandshakeOut::Acknowledge { .. } => 1,
+            OSPHandshakeOut::LoginResponse { .. } => 2,
         }
     }
 }
@@ -82,39 +129,21 @@ impl SerializePacket for OSPHandshakeOut {
         buf.write_u8(self.into())?; // Message Type byte
         let mut bytes_written: usize = 1;
         match self {
-            OSPHandshakeOut::Acknowledge { ok, err } => {
+            OSPHandshakeOut::Acknowledge { ok, require_login, err } => {
                 buf.write_i8(*ok as i8)?;
                 bytes_written += 1;
 
-                if let Some(msg) = err {
-                    buf.write_i8(1)?; // write true to indicate that this will have a message
-                    bytes_written += 1;
+                buf.write_i8(*require_login as i8)?;
+                bytes_written += 1;
 
-                    let message = msg.as_bytes();
-                    buf.write_u16::<NetworkEndian>(message.len() as u16)?;
-                    buf.write_all(&message)?;
-                    bytes_written += 2 + message.len();
-                } else {
-                    buf.write_i8(0)?; // write false for no err
-                    bytes_written += 1;
-                }
+                self.write_optional_string(buf, err);
             }
-            // OSPHandshakeOut::SyncProject { ok, changed } => {
-            //     buf.write_i8(*ok as i8)?;
-            //     bytes_written += 1;
+            OSPHandshakeOut::LoginResponse { ok, err } => {
+                buf.write_i8(*ok as i8)?;
+                bytes_written += 1;
 
-            //     buf.write_i8(*changed as i8)?;
-            //     bytes_written += 1;
-
-            //     // let message = message.as_bytes();
-            //     // buf.write_u16::<NetworkEndian>(message.len() as u16)?;
-            //     // buf.write_all(&message)?;
-            //     // bytes_written += 2 + message.len();
-            // }
-            // OSPHandshakeOut::InstallProject { ok } => {
-            //     buf.write_i8(*ok as i8)?;
-            //     bytes_written += 1;
-            // }
+                self.write_optional_string(buf, err);
+            }
         }
         Ok(bytes_written)
     }
@@ -128,9 +157,12 @@ impl DeserializePacket for OSPHandshakeOut {
         match buf.read_u8()? {
             1 => Ok(OSPHandshakeOut::Acknowledge {
                 ok: buf.read_i8().unwrap() != 0,
-                err: if buf.read_i8().unwrap() != 0 { // if the boolean is set read the optional value
-                    Some(extract_string(buf)?)
-                } else { None } // otherwise None
+                require_login: buf.read_i8().unwrap() != 0,
+                err: Self::read_optional_string(buf),
+            }),
+            2 => Ok(OSPHandshakeOut::LoginResponse {
+                ok: buf.read_i8().unwrap() != 0,
+                err: Self::read_optional_string(buf),
             }),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,

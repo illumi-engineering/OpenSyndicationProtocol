@@ -1,10 +1,9 @@
 [package]
-name = "osp_protocol"
+name = "osp_server_sdk"
 version = "0.0.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-byteorder = "1.5.0"
-edcert = "9.0.1"
+osp_protocol = { workspace = true }

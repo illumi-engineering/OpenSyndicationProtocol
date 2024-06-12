@@ -2,5 +2,8 @@
 resolver = "2"
 
 members = [
-    "protocol",
+    "protocol", "server", "client"
 ]
+
+[workspace.dependencies]
+osp_protocol = { version = "=0.0.1", path = "protocol" }
