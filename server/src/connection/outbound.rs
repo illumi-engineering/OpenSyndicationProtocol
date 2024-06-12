@@ -12,7 +12,7 @@ impl OutboundConnection {
         }
     }
 
-    pub fn begin(mut self) -> io::Result<()> {
+    pub fn begin(&mut self) -> io::Result<()> {
         self.protocol.send_message(&OSPHandshakeIn::Hello { connection_type: ConnectionType::Server })?;
 
         if let OSPHandshakeOut::Acknowledge {
@@ -26,7 +26,7 @@ impl OutboundConnection {
 
                 }
             } else {
-                eprintln!(format!("[osp_server:outbound] hello: {}", err.unwrap()))
+                eprintln!("[osp_server:outbound] hello: {}", err.unwrap())
             }
         }
 

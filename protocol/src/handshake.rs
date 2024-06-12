@@ -1,6 +1,6 @@
 use std::io::{self, Read, Write};
 
-use edcert::certificate::Certificate;
+// use edcert::certificate::Certificate;
 use byteorder::{WriteBytesExt, ReadBytesExt};
 
 use super::utils::{DeserializePacket, SerializePacket};
@@ -12,14 +12,11 @@ pub enum ConnectionType {
 }
 
 impl ConnectionType {
-    fn from_u8(t: u8) -> io::Result<ConnectionType> {
+    fn from_u8(t: u8) -> ConnectionType {
         match t {
-            1 => Ok(ConnectionType::Client),
-            2 => Ok(ConnectionType::Server),
-            _ => io::Error::new(
-                io::ErrorKind::InvalidData,
-                "Invalid Connection Type"
-            )
+            1 => ConnectionType::Client,
+            2 => ConnectionType::Server,
+            _ => ConnectionType::Unknown
         }
     }
 }
@@ -27,6 +24,7 @@ impl ConnectionType {
 impl From<&ConnectionType> for u8 {
     fn from(t: &ConnectionType) -> Self {
         match t {
+            ConnectionType::Unknown => 0,
             ConnectionType::Client => 1,
             ConnectionType::Server => 2,
         }
@@ -87,11 +85,11 @@ impl SerializePacket for OSPHandshakeIn {
 impl DeserializePacket for OSPHandshakeIn {
     type Output = OSPHandshakeIn;
 
-    fn deserialize(mut buf: &mut impl Read) -> io::Result<OSPHandshakeIn> {
+    fn deserialize(buf: &mut impl Read) -> io::Result<OSPHandshakeIn> {
         // We'll match the same `u8` that is used to recognize which request type this is
         match buf.read_u8()? {
             1 => Ok(OSPHandshakeIn::Hello {
-                connection_type: ConnectionType::from_u8(buf.read_u8()?)?
+                connection_type: ConnectionType::from_u8(buf.read_u8().unwrap())
             }),
             2 => Ok(OSPHandshakeIn::Login {}),
             _ => Err(io::Error::new(
