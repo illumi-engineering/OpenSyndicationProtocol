@@ -9,4 +9,5 @@ edition = "2021"
 openssl = "0.10.64"
 osp_protocol = { workspace = true }
 trust-dns-resolver = "0.23.2"
+url = "2.5.2"
 uuid = { version = "1.8.0", features = ["v4"]}

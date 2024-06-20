@@ -39,7 +39,7 @@ pub enum OSPHandshakeIn {
         hostname: String,
     },
     Verify {
-        challenge: [u8; 256],
+        challenge: Vec<u8>,
         nonce: Uuid,
     }
 }
@@ -91,7 +91,7 @@ impl DeserializePacket for OSPHandshakeIn {
                 hostname: Self::read_string(buf).unwrap(),
             }),
             3 => {
-                let mut challenge_bytes = [0u8; 256];
+                let mut challenge_bytes = vec![0u8; 256];
                 buf.read_exact(&mut challenge_bytes)?;
                 Ok(OSPHandshakeIn::Verify {
                     challenge: challenge_bytes,

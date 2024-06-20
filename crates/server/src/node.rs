@@ -1,10 +1,16 @@
-use std::{net::{SocketAddr, TcpListener, TcpStream}};
+use std::{fs, io, net::{SocketAddr, TcpListener, TcpStream}};
 use std::net::{IpAddr, Ipv4Addr};
+use openssl::pkey::Private;
+use openssl::rsa::Rsa;
+use osp_protocol::OSPUrl;
 use crate::connection::inbound::{InboundConnection, TransferState};
+use crate::connection::outbound::OutboundConnection;
 
 
-struct OSProtocolNodeBuilder {
+pub struct OSProtocolNodeBuilder {
     bind_addr: SocketAddr,
+    hostname: String,
+    private_key: Option<Rsa<Private>>,
 }
 
 impl OSProtocolNodeBuilder {
@@ -13,9 +19,22 @@ impl OSProtocolNodeBuilder {
         self
     }
 
+    pub fn hostname(mut self, hostname: String) -> Self {
+        self.hostname = hostname;
+        self
+    }
+
+    pub fn private_key_file(mut self, path: String) -> Self {
+        let key_contents = fs::read_to_string(path.clone()).expect(format!("Unable to open private key file {}", path).as_str());
+        self.private_key = Some(Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap());
+        self
+    }
+
     pub fn build(self) -> OSProtocolNode {
         OSProtocolNode {
             bind_addr: self.bind_addr,
+            hostname: self.hostname,
+            private_key: self.private_key.unwrap(),
         }
     }
 }
@@ -23,16 +42,20 @@ impl OSProtocolNodeBuilder {
 #[derive(Clone)]
 pub struct OSProtocolNode {
     bind_addr: SocketAddr,
+    hostname: String,
+    private_key: Rsa<Private>,
 }
 
 impl OSProtocolNode {
-    fn builder() -> OSProtocolNodeBuilder {
+    pub fn builder() -> OSProtocolNodeBuilder {
         OSProtocolNodeBuilder {
             bind_addr: SocketAddr::new(IpAddr::from(Ipv4Addr::LOCALHOST), 57401),
+            hostname: "".to_string(),
+            private_key: None,
         }
     }
 
-    fn start_server(self) {
+    pub fn listen(&self) {
         let listener = TcpListener::bind(self.bind_addr).unwrap();
         println!("listening started, ready to accept");
         for stream in listener.incoming() {
@@ -50,7 +73,6 @@ impl OSProtocolNode {
     }
 
     fn start_connection(self, stream: TcpStream) {
-
         std::thread::spawn(move | | {
             let mut connection_handshake = InboundConnection::with_stream(stream).unwrap();
             match connection_handshake.begin() {
@@ -60,5 +82,10 @@ impl OSProtocolNode {
                 _ => {}
             }
         });
+    }
+
+    pub fn test_outbound(&self, url: OSPUrl) -> io::Result<()> {
+        let mut conn = OutboundConnection::create(url, self.private_key.clone(), self.hostname.clone())?;
+        conn.begin()
     }
 }

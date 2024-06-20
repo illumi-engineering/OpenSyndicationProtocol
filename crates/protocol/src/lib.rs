@@ -15,5 +15,6 @@
 mod protocol;
 mod handshake;
 mod utils;
+mod url;
 
-pub use {protocol::*, handshake::*};
+pub use {protocol::*, handshake::*, url::OSPUrl};
