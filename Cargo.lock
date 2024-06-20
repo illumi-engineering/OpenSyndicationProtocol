@@ -786,6 +786,7 @@ version = "0.0.1"
 dependencies = [
  "clap",
  "colog",
+ "log",
  "osp_protocol",
  "osp_server_sdk",
  "url",

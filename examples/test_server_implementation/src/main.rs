@@ -6,6 +6,7 @@ use std::time::Duration;
 use clap::Parser;
 use osp_server_sdk::OSProtocolNode;
 use url::Url;
+use log::info;
 use osp_protocol::OSPUrl;
 
 static GLOBAL_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -64,6 +65,7 @@ fn main() {
 
     for uri in args.push_to {
         let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
+        info!("url: {osp_url}");
         let n = Arc::clone(&node);
         GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
         std::thread::spawn(move || {
