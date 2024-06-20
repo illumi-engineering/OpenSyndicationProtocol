@@ -17,14 +17,9 @@ impl OutboundConnection {
 
         if let OSPHandshakeOut::Acknowledge {
             ok,
-            require_login,
             err
         } = self.protocol.read_message::<OSPHandshakeOut>()? {
             if ok {
-                // todo: next steps
-                if require_login {
-
-                }
             } else {
                 eprintln!("[osp_server:outbound] hello: {}", err.unwrap())
             }

@@ -1,7 +1,7 @@
 use std::io::{self, Read, Write};
 
-// use edcert::certificate::Certificate;
-use byteorder::{WriteBytesExt, ReadBytesExt};
+use byteorder::{WriteBytesExt, ReadBytesExt, NetworkEndian};
+use uuid::Uuid;
 
 use super::utils::{DeserializePacket, SerializePacket};
 
@@ -35,14 +35,21 @@ pub enum OSPHandshakeIn {
     Hello {
         connection_type: ConnectionType,
     },
-    Login {},
+    Identify {
+        hostname: String,
+    },
+    Verify {
+        challenge: [u8; 256],
+        nonce: Uuid,
+    }
 }
 
 impl From<&OSPHandshakeIn> for u8 {
     fn from(req: &OSPHandshakeIn) -> Self {
         match req {
             OSPHandshakeIn::Hello { .. } => 1,
-            OSPHandshakeIn::Login { .. } => 2,
+            OSPHandshakeIn::Identify { .. } => 2,
+            OSPHandshakeIn::Verify { .. } => 3,
         }
     }
 }
@@ -57,26 +64,15 @@ impl SerializePacket for OSPHandshakeIn {
                 buf.write_u8(u8::from(connection_type))?;
                 bytes_written += 1
             }
-            OSPHandshakeIn::Login {  } => {
-
+            OSPHandshakeIn::Identify { hostname } => {
+                bytes_written += self.write_string(buf, hostname);
             }
-            // OSPHandshake::SyncProject { root_dir } => {
-            //     // Write the variable length message string, preceded by it's length
-            //     let root_dir = root_dir.as_bytes();
-            //     buf.write_u16::<NetworkEndian>(root_dir.len() as u16)?;
-            //     buf.write_all(&root_dir)?;
-            //     bytes_written += 2 + root_dir.len()
-            // }
-            // OSPHandshake::InstallProject { project_dir, workspace } => {
-            //     // Write the variable length message string, preceded by it's length
-            //     let project_dir = project_dir.as_bytes();
-            //     buf.write_u16::<NetworkEndian>(project_dir.len() as u16)?;
-            //     buf.write_all(&project_dir)?;
-            //     bytes_written += 2 + project_dir.len();
+            OSPHandshakeIn::Verify { challenge, nonce } => {
+                buf.write_all(challenge)?;
+                bytes_written += 256;
 
-            //     buf.write_i8(*workspace as i8)?;
-            //     bytes_written += 1;
-            // }
+                bytes_written += self.write_uuid(buf, nonce);
+            }
         }
         Ok(bytes_written)
     }
@@ -89,9 +85,19 @@ impl DeserializePacket for OSPHandshakeIn {
         // We'll match the same `u8` that is used to recognize which request type this is
         match buf.read_u8()? {
             1 => Ok(OSPHandshakeIn::Hello {
-                connection_type: ConnectionType::from_u8(buf.read_u8().unwrap())
+                connection_type: ConnectionType::from_u8(buf.read_u8().unwrap()),
             }),
-            2 => Ok(OSPHandshakeIn::Login {}),
+            2 => Ok(OSPHandshakeIn::Identify {
+                hostname: Self::read_string(buf).unwrap(),
+            }),
+            3 => {
+                let mut challenge_bytes = [0u8; 256];
+                buf.read_exact(&mut challenge_bytes)?;
+                Ok(OSPHandshakeIn::Verify {
+                    challenge: challenge_bytes,
+                    nonce: Self::read_uuid(buf),
+                })
+            },
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid Request Type",
@@ -103,12 +109,15 @@ impl DeserializePacket for OSPHandshakeIn {
 pub enum OSPHandshakeOut {
     Acknowledge {
         ok: bool,
-        require_login: bool,
         err: Option<String>,
     },
-    LoginResponse {
-        ok: bool,
-        err: Option<String>,
+    Challenge {
+        encrypted_challenge: Vec<u8>,
+        nonce: Uuid,
+    },
+    Close {
+        can_continue: bool,
+        err: Option<String>
     }
 }
 
@@ -116,7 +125,8 @@ impl From<&OSPHandshakeOut> for u8 {
     fn from(req: &OSPHandshakeOut) -> Self {
         match req {
             OSPHandshakeOut::Acknowledge { .. } => 1,
-            OSPHandshakeOut::LoginResponse { .. } => 2,
+            OSPHandshakeOut::Challenge { .. } => 2,
+            OSPHandshakeOut::Close { .. } => 3,
         }
     }
 }
@@ -127,20 +137,24 @@ impl SerializePacket for OSPHandshakeOut {
         buf.write_u8(self.into())?; // Message Type byte
         let mut bytes_written: usize = 1;
         match self {
-            OSPHandshakeOut::Acknowledge { ok, require_login, err } => {
-                buf.write_i8(*ok as i8)?;
+            OSPHandshakeOut::Acknowledge { ok, err } => {
+                buf.write_u8(*ok as u8)?;
                 bytes_written += 1;
 
-                buf.write_i8(*require_login as i8)?;
-                bytes_written += 1;
-
-                self.write_optional_string(buf, err);
+                bytes_written += self.write_optional_string(buf, err);
             }
-            OSPHandshakeOut::LoginResponse { ok, err } => {
-                buf.write_i8(*ok as i8)?;
+            OSPHandshakeOut::Challenge { encrypted_challenge: challenge_encrypted, nonce } => {
+                buf.write_u16::<NetworkEndian>(challenge_encrypted.len() as u16)?;
+                bytes_written += 2;
+                buf.write_all(challenge_encrypted)?;
+
+                bytes_written += self.write_uuid(buf, nonce);
+            }
+            OSPHandshakeOut::Close { can_continue: ok, err} => {
+                buf.write_u8(*ok as u8)?;
                 bytes_written += 1;
 
-                self.write_optional_string(buf, err);
+                bytes_written += self.write_optional_string(buf, err);
             }
         }
         Ok(bytes_written)
@@ -154,12 +168,21 @@ impl DeserializePacket for OSPHandshakeOut {
         // We'll match the same `u8` that is used to recognize which response type this is
         match buf.read_u8()? {
             1 => Ok(OSPHandshakeOut::Acknowledge {
-                ok: buf.read_i8().unwrap() != 0,
-                require_login: buf.read_i8().unwrap() != 0,
+                ok: buf.read_u8().unwrap() != 0,
                 err: Self::read_optional_string(buf),
             }),
-            2 => Ok(OSPHandshakeOut::LoginResponse {
-                ok: buf.read_i8().unwrap() != 0,
+            2 => {
+                let challenge_len = buf.read_u16::<NetworkEndian>()?;
+                let mut challenge_encrypted = vec![0u8; challenge_len as usize];
+                buf.read_exact(&mut challenge_encrypted)?;
+
+                Ok(OSPHandshakeOut::Challenge {
+                    encrypted_challenge: challenge_encrypted,
+                    nonce: Self::read_uuid(buf),
+                })
+            },
+            3 => Ok(OSPHandshakeOut::Close {
+                can_continue: buf.read_u8().unwrap() != 0,
                 err: Self::read_optional_string(buf),
             }),
             _ => Err(io::Error::new(

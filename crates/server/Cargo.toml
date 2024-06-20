@@ -6,4 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+openssl = "0.10.64"
 osp_protocol = { workspace = true }
+trust-dns-resolver = "0.23.2"
+uuid = { version = "1.8.0", features = ["v4"]}

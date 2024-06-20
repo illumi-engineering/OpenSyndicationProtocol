@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 byteorder = "1.5.0"
-edcert = "9.0.1"
+uuid = "1.8.0"

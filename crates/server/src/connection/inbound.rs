@@ -1,65 +1,123 @@
 use std::io;
 use std::net::TcpStream;
+use openssl::rand::rand_bytes;
+use openssl::rsa::{Padding, Rsa};
+use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+use trust_dns_resolver::Resolver;
+use uuid::Uuid;
 use osp_protocol::{ConnectionType, OSPHandshakeIn, OSPHandshakeOut, Protocol};
 
-pub struct InboundConnectionOptions {
-    require_client_auth: bool,
-    require_server_auth: bool,
-}
-
-impl InboundConnectionOptions {
-    pub fn build() -> Self {
-        Self {
-            require_client_auth: false,
-            require_server_auth: false,
-        }
-    }
-
-    pub fn require_auth(mut self, client: bool, server: bool) -> Self {
-        self.require_client_auth = client;
-        self.require_server_auth = server;
-        self
-    }
-}
-
-pub struct InboundConnection {
+pub struct InboundConnection<TState> {
     protocol: Protocol,
     connection_type: ConnectionType,
-    options: InboundConnectionOptions,
+    state: TState
 }
 
-impl InboundConnection {
-    pub fn with_stream(stream: TcpStream, options: InboundConnectionOptions) -> io::Result<Self> {
+pub struct HandshakeState {
+    nonce: Uuid,
+}
+pub struct TransferState {
+
+}
+
+impl From<InboundConnection<HandshakeState>> for InboundConnection<TransferState> {
+    fn from(value: InboundConnection<HandshakeState>) -> Self {
+        InboundConnection {
+            protocol: value.protocol,
+            connection_type: value.connection_type,
+            state: TransferState {},
+        }
+    }
+}
+
+impl InboundConnection<HandshakeState> {
+    pub fn with_stream(stream: TcpStream) -> io::Result<Self> {
         Ok(Self {
             protocol: Protocol::with_stream(stream)?,
             connection_type: ConnectionType::Unknown,
-            options,
+            state: HandshakeState {
+                nonce: Uuid::new_v4(),
+            }
         })
     }
 
-    pub fn begin(mut self) -> io::Result<()> {
-        let request = self.protocol.read_message::<OSPHandshakeIn>()?;
-        match request {
-            OSPHandshakeIn::Hello { connection_type } => {
-                self.connection_type = connection_type;
+    fn send_close_err(&mut self, error_kind: io::ErrorKind, err: String) -> io::Error {
+        self.protocol.send_message(&OSPHandshakeOut::Close {
+            can_continue: false,
+            err: Some(err.clone()),
+        }).unwrap();
+        io::Error::new(error_kind, err)
+    }
 
-                let require_login= match self.connection_type {
-                    ConnectionType::Client => self.options.require_client_auth,
-                    ConnectionType::Server => self.options.require_server_auth,
-                    _ => true
-                };
+    pub fn begin(&mut self) -> io::Result<()> {
+        if let OSPHandshakeIn::Hello { connection_type } = self.protocol.read_message::<OSPHandshakeIn>()? {
+            self.connection_type = connection_type;
 
-                self.protocol.send_message(&OSPHandshakeOut::Acknowledge {
-                    ok: true,
-                    require_login,
-                    err: None
-                })?
+            self.protocol.send_message(&OSPHandshakeOut::Acknowledge {
+                ok: true,
+                err: None
+            })?;
+
+            if let OSPHandshakeIn::Identify { hostname } = self.protocol.read_message::<OSPHandshakeIn>()? {
+                // todo: check whitelist/blacklist
+                let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
+                let txt_resp = resolver.srv_lookup(format!("_osp.{}", hostname));
+                match txt_resp {
+                    Ok(txt_resp) => {
+                        if let Some(record) = txt_resp.iter().next() {
+                            let pub_key = Rsa::public_key_from_pem(record.to_string().as_bytes())?;
+                            let mut challenge_bytes = [0; 256];
+                            rand_bytes(&mut challenge_bytes).unwrap();
+                            let mut encrypted_challenge = vec![0u8; pub_key.size() as usize];
+                            pub_key.public_encrypt(&challenge_bytes, &mut encrypted_challenge, Padding::PKCS1)?;
+                            self.protocol.send_message(&OSPHandshakeOut::Challenge {
+                                encrypted_challenge,
+                                nonce: self.state.nonce,
+                            })?;
+
+                            if let OSPHandshakeIn::Verify { challenge, nonce } = self.protocol.read_message::<OSPHandshakeIn>()? {
+                                if nonce != self.state.nonce {
+                                    return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()));
+                                }
+
+                                if challenge == challenge_bytes {
+                                    self.protocol.send_message(&OSPHandshakeOut::Close {
+                                        can_continue: true,
+                                        err: None,
+                                    })?;
+                                    Ok(())
+                                } else {
+                                    return Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Challenge failed".to_string()))
+                                }
+                            } else {
+                                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected challenge verification packet".to_string()));
+                            }
+                        } else {
+                            return Err(
+                                self.send_close_err(
+                                    io::ErrorKind::InvalidData,
+                                    format!("Failed to resolve SRV record for {}. Is it located at _osp.{}?", hostname, hostname)
+                                )
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        return Err(
+                            self.send_close_err(
+                                io::ErrorKind::Other,
+                                format!(
+                                    "Failed to resolve SRV record for {}. Is it located at _osp.{}?\n\nFurther Details: {}",
+                                    hostname, hostname, e.to_string()
+                                )
+                            )
+                        );
+                    }
+                }
+            } else {
+                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected identify packet".to_string()));
             }
-            OSPHandshakeIn::Login { } => {
-                // todo: login logic
-            }
+        } else {
+            return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected hello packet".to_string()));
         }
-
-        Ok(())
     }
 }
