@@ -1,7 +1,7 @@
 # OpenSyndicationProtocol
 A server -> server RPC protocol for syndicating data, implemented in rust.
 
-# Completion State
+## Completion State
 This project is a work in progress:
 - [x] Protocol Transport
 - [x] Handshake Frame
@@ -12,3 +12,8 @@ This project is a work in progress:
   - [ ] Universal Data -> buffer serialization/deserialization framework for consumers
 - [ ] Client -> server communication for devs that wish to build client -> server architecture with all syndicated data availible to the client
   - todo: elaborate this point
+
+## License
+This project is dedicated to the Public Domain: [Unlicense](./UNLICENSE)
+
+Please, feel free to use it however you like.
