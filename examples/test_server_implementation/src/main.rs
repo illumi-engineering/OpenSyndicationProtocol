@@ -5,7 +5,7 @@ use osp_server_sdk::OSProtocolNode;
 use url::Url;
 use osp_protocol::OSPUrl;
 
-/// Simple program to greet a person
+/// Test implementation of an Open Syndication Protocol server node
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
