@@ -1,9 +1,14 @@
 use std::net::{SocketAddr, SocketAddrV4};
+use std::panic;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use clap::Parser;
 use osp_server_sdk::OSProtocolNode;
 use url::Url;
 use osp_protocol::OSPUrl;
+
+static GLOBAL_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Test implementation of an Open Syndication Protocol server node
 #[derive(Parser, Debug)]
@@ -42,15 +47,39 @@ fn main() {
     ));
 
     let n = Arc::clone(&node);
+    GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {
-        n.lock().unwrap().listen()
+        // We need to catch panics to reliably signal exit of a thread
+        let result = panic::catch_unwind(move || {
+            n.lock().unwrap().listen();
+        });
+        // process errors
+        match result {
+            _ => {}
+        }
+        // signal thread exit
+        GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
     });
 
     for uri in args.push_to {
         let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
         let n = Arc::clone(&node);
+        GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
         std::thread::spawn(move || {
-            n.lock().unwrap().test_outbound(osp_url)
+            // We need to catch panics to reliably signal exit of a thread
+            let result = panic::catch_unwind(move || {
+                n.lock().unwrap().test_outbound(osp_url).unwrap();
+            });
+            // process errors
+            match result {
+                _ => {}
+            }
+            // signal thread exit
+            GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
         });
+    }
+
+    while GLOBAL_THREAD_COUNT.load(Ordering::SeqCst) != 0 {
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
