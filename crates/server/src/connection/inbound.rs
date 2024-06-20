@@ -61,7 +61,7 @@ impl InboundConnection<HandshakeState> {
             if let OSPHandshakeIn::Identify { hostname } = self.protocol.read_message::<OSPHandshakeIn>()? {
                 // todo: check whitelist/blacklist
                 let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
-                let txt_resp = resolver.srv_lookup(format!("_osp.{}", hostname));
+                let txt_resp = resolver.txt_lookup(format!("_osp.{}", hostname));
                 match txt_resp {
                     Ok(txt_resp) => {
                         if let Some(record) = txt_resp.iter().next() {
