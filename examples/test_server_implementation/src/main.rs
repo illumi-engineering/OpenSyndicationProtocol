@@ -33,7 +33,13 @@ struct Args {
 fn main() {
     let args = Args::parse();
     let addr = SocketAddrV4::new(args.bind.parse().expect("Invalid bind address"), args.port);
-    let node = Arc::new(Mutex::new(OSProtocolNode::builder().bind_to(SocketAddr::from(addr)).build()));
+    let node = Arc::new(Mutex::new(
+        OSProtocolNode::builder()
+            .bind_to(SocketAddr::from(addr))
+            .private_key_file(args.private_key)
+            .hostname(args.hostname)
+            .build()
+    ));
 
     let n = Arc::clone(&node);
     std::thread::spawn(move || {
