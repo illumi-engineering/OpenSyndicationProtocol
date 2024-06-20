@@ -1,0 +1,12 @@
+[package]
+name = "test_server_implementation"
+version = "0.0.1"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+clap = { version = "4.5.7", features = ["derive"] }
+osp_server_sdk = { workspace = true }
+osp_protocol = { workspace = true }
+url = "2.5.2"
