@@ -88,7 +88,7 @@ impl OSProtocolNode {
 
     pub fn test_outbound(&self, url: OSPUrl) {
         info!("Testing outbound connection to {url}");
-        let mut conn = OutboundConnection::create(url, self.private_key.clone(), self.hostname.clone())?;
+        let mut conn = OutboundConnection::create(url, self.private_key.clone(), self.hostname.clone()).unwrap();
         conn.begin().unwrap();
     }
 }
