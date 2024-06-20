@@ -1,5 +1,6 @@
 use std::io;
 use std::net::TcpStream;
+use log::info;
 use openssl::rand::rand_bytes;
 use openssl::rsa::{Padding, Rsa};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
@@ -60,11 +61,13 @@ impl InboundConnection<HandshakeState> {
 
             if let OSPHandshakeIn::Identify { hostname } = self.protocol.read_message::<OSPHandshakeIn>()? {
                 // todo: check whitelist/blacklist
+                info!("Looking up challenge record for {hostname}");
                 let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
                 let txt_resp = resolver.txt_lookup(format!("_osp.{}", hostname));
                 match txt_resp {
                     Ok(txt_resp) => {
                         if let Some(record) = txt_resp.iter().next() {
+                            info!("Challenge record found");
                             let pub_key = Rsa::public_key_from_pem(record.to_string().as_bytes())?;
                             let mut challenge_bytes = [0; 256];
                             rand_bytes(&mut challenge_bytes).unwrap();
@@ -76,11 +79,13 @@ impl InboundConnection<HandshakeState> {
                             })?;
 
                             if let OSPHandshakeIn::Verify { challenge, nonce } = self.protocol.read_message::<OSPHandshakeIn>()? {
+                                info!("Received challenge verification");
                                 if nonce != self.state.nonce {
                                     return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()));
                                 }
 
                                 if challenge == challenge_bytes {
+                                    info!("Challenge verification successful");
                                     self.protocol.send_message(&OSPHandshakeOut::Close {
                                         can_continue: true,
                                         err: None,

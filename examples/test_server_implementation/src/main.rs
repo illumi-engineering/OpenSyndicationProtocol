@@ -36,6 +36,7 @@ struct Args {
 }
 
 fn main() {
+    colog::init();
     let args = Args::parse();
     let addr = SocketAddrV4::new(args.bind.parse().expect("Invalid bind address"), args.port);
     let node = Arc::new(Mutex::new(

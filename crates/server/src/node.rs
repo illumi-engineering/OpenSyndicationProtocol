@@ -1,5 +1,6 @@
 use std::{fs, io, net::{SocketAddr, TcpListener, TcpStream}};
 use std::net::{IpAddr, Ipv4Addr};
+use log::info;
 use openssl::pkey::Private;
 use openssl::rsa::Rsa;
 use osp_protocol::OSPUrl;
@@ -56,11 +57,12 @@ impl OSProtocolNode {
     }
 
     pub fn listen(&self) {
+        let port = self.bind_addr.port();
         let listener = TcpListener::bind(self.bind_addr).unwrap();
-        println!("listening started, ready to accept");
+        info!("Listening started on port {port}, ready to accept connections");
         for stream in listener.incoming() {
             if let Ok(stream) = stream {
-                println!("Accepting a new connection from {}",
+                info!("Accepting a new connection from {}",
                          stream
                              .peer_addr()
                              .map(|addr| addr.to_string())
@@ -85,6 +87,7 @@ impl OSProtocolNode {
     }
 
     pub fn test_outbound(&self, url: OSPUrl) -> io::Result<()> {
+        info!("Testing outbound connection to {url}");
         let mut conn = OutboundConnection::create(url, self.private_key.clone(), self.hostname.clone())?;
         conn.begin()
     }

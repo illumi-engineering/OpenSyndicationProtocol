@@ -1,5 +1,6 @@
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use log::{error, info};
 use openssl::pkey::Private;
 use openssl::rsa::{Padding, Rsa};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
@@ -14,21 +15,25 @@ pub struct OutboundConnection {
 
 impl OutboundConnection {
     pub fn create(url: OSPUrl, private_key: Rsa<Private>, hostname: String) -> io::Result<Self> {
+        info!("Resolving osp connection to {url}");
         let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
 
         let ip_resp = resolver.ipv4_lookup(url.domain.clone())?;
         if let Some(ip) = ip_resp.iter().next() {
+            info!("Lookup successful, opening connection");
             Ok(Self {
                 protocol: Protocol::connect(SocketAddr::new(IpAddr::from(ip.0), url.port))?,
                 private_key,
                 hostname,
             })
         } else {
+            error!("Lookup failed");
             Err(io::Error::new(io::ErrorKind::NotConnected, format!("Failed to resolve address {}", url.domain)))
         }
     }
 
     pub fn begin(&mut self) -> io::Result<()> {
+        info!("Starting outbound handshake");
         let hostname = self.hostname.clone();
         let private_key = self.private_key.clone();
         self.protocol.send_message(&OSPHandshakeIn::Hello { connection_type: ConnectionType::Server })?;
@@ -38,6 +43,7 @@ impl OutboundConnection {
             err
         } = self.protocol.read_message::<OSPHandshakeOut>()? {
             if ok {
+                info!("Handshake acknowledged");
                 self.protocol.send_message(&OSPHandshakeIn::Identify {
                     hostname,
                 })?;
@@ -46,9 +52,11 @@ impl OutboundConnection {
                     nonce,
                     encrypted_challenge
                 } = self.protocol.read_message::<OSPHandshakeOut>()? {
+                    info!("Challenge received, decrypting");
                     let mut decrypt_buf = vec![0u8; private_key.size() as usize];
                     private_key.private_decrypt(&*encrypted_challenge, &mut *decrypt_buf, Padding::PKCS1)?;
 
+                    info!("Sending decrypted challenge");
                     self.protocol.send_message(&OSPHandshakeIn::Verify {
                         nonce,
                         challenge: decrypt_buf,
@@ -59,21 +67,21 @@ impl OutboundConnection {
                         err,
                     } = self.protocol.read_message::<OSPHandshakeOut>()? {
                         if can_continue {
-                            println!("Handshake successful!")
+                            info!("Handshake successful!")
                         } else {
                             match err {
                                 None => {
-                                    eprintln!("Unknown handshake err");
+                                    error!("Unknown handshake err");
                                 }
                                 Some(e) => {
-                                    eprintln!("Handshake err: {}", e);
+                                    error!("Handshake err: {}", e);
                                 }
                             }
                         }
                     }
                 }
             } else {
-                eprintln!("[osp_server:outbound] hello: {}", err.unwrap());
+                error!("Hello failed: {}", err.unwrap());
             }
         }
 

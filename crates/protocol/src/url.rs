@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use url::Url;
 
 pub struct OSPUrl {
@@ -13,5 +14,11 @@ impl From<Url> for OSPUrl {
             domain: value.domain().unwrap().to_string(),
             port: value.port().unwrap()
         }
+    }
+}
+
+impl Display for OSPUrl {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(format!("osp://{}:{}", self.domain, self.port).as_str())
     }
 }
