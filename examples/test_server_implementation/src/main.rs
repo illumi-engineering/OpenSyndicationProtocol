@@ -71,7 +71,8 @@ fn main() {
         std::thread::spawn(move || {
             // We need to catch panics to reliably signal exit of a thread
             let result = panic::catch_unwind(move || {
-                n.lock().unwrap().test_outbound(osp_url).unwrap();
+                info!("Starting outbound thread");
+                n.lock().unwrap().test_outbound(osp_url);
             });
             // process errors
             match result {
