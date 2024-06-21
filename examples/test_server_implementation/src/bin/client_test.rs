@@ -32,6 +32,6 @@ async fn main() -> io::Result<()> {
 
     info!("Starting outbound thread");
     let mut conn = OutboundConnection::create_with_socket_addr(args.address.parse().unwrap(), key, args.hostname)?;
-    let mut conn_in_handshake = conn.begin()?;
-    conn_in_handshake.handshake()
+    let mut conn_in_handshake = conn.begin().await?;
+    conn_in_handshake.handshake().await
 }

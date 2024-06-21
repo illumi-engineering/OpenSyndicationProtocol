@@ -51,14 +51,14 @@ impl OutboundConnection<WaitingState> {
         })
     }
 
-    pub fn begin(&mut self) -> io::Result<OutboundConnection<HandshakeState>> {
+    pub async fn begin(&mut self) -> io::Result<OutboundConnection<HandshakeState>> {
         info!("Starting outbound connection");
         Ok(OutboundConnection {
             private_key: self.private_key.clone(),
             hostname: self.hostname.clone(),
             addr: self.addr.clone(),
             state: HandshakeState {
-                protocol: Protocol::connect(self.addr)?,
+                protocol: Protocol::connect(self.addr).await?,
             },
         })
     }

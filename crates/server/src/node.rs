@@ -1,8 +1,10 @@
-use std::{fs, io, net::{SocketAddr, TcpListener, TcpStream}};
+use std::{fs, net::{SocketAddr}};
 use std::net::{IpAddr, Ipv4Addr};
 use log::info;
 use openssl::pkey::Private;
 use openssl::rsa::Rsa;
+use tokio::io;
+use tokio::net::{TcpListener, TcpStream};
 use osp_protocol::OSPUrl;
 use crate::connection::inbound::{InboundConnection, TransferState};
 use crate::connection::outbound::OutboundConnection;
@@ -78,8 +80,8 @@ impl OSProtocolNode {
 
     fn start_connection(&self, stream: TcpStream) {
         tokio::spawn(async move {
-            let mut connection_handshake = InboundConnection::with_stream(stream).unwrap();
-            match connection_handshake.begin() {
+            let mut connection_handshake = InboundConnection::with_stream(stream)?;
+            match connection_handshake.begin().await {
                 Ok(_) => {
                     let mut connection_transfer = InboundConnection::<TransferState>::from(connection_handshake);
                 }
