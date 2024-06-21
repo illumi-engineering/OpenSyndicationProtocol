@@ -74,7 +74,7 @@ impl OSProtocolNode {
         }
     }
 
-    fn start_connection(self, stream: TcpStream) {
+    fn start_connection(&self, stream: TcpStream) {
         std::thread::spawn(move | | {
             let mut connection_handshake = InboundConnection::with_stream(stream).unwrap();
             match connection_handshake.begin() {

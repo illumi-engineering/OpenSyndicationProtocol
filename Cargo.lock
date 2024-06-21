@@ -787,6 +787,7 @@ dependencies = [
  "clap",
  "colog",
  "log",
+ "openssl",
  "osp_protocol",
  "osp_server_sdk",
  "url",

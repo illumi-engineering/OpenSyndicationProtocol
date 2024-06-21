@@ -12,3 +12,4 @@ osp_protocol = { workspace = true }
 url = "2.5.2"
 colog = "1.3.0"
 log = "0.4.21"
+openssl = "0.10.64"

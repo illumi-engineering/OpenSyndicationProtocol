@@ -59,68 +59,70 @@ impl InboundConnection<HandshakeState> {
                 err: None
             })?;
 
-            if let OSPHandshakeIn::Identify { hostname } = self.protocol.read_message::<OSPHandshakeIn>()? {
-                // todo: check whitelist/blacklist
-                info!("Looking up challenge record for {hostname}");
-                let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
-                let txt_resp = resolver.txt_lookup(format!("_osp.{}", hostname));
-                match txt_resp {
-                    Ok(txt_resp) => {
-                        if let Some(record) = txt_resp.iter().next() {
-                            info!("Challenge record found");
-                            let pub_key = Rsa::public_key_from_pem(record.to_string().as_bytes())?;
-                            let mut challenge_bytes = [0; 256];
-                            rand_bytes(&mut challenge_bytes).unwrap();
-                            let mut encrypted_challenge = vec![0u8; pub_key.size() as usize];
-                            pub_key.public_encrypt(&challenge_bytes, &mut encrypted_challenge, Padding::PKCS1)?;
-                            self.protocol.send_message(&OSPHandshakeOut::Challenge {
-                                encrypted_challenge,
-                                nonce: self.state.nonce,
-                            })?;
+            Ok(())
 
-                            if let OSPHandshakeIn::Verify { challenge, nonce } = self.protocol.read_message::<OSPHandshakeIn>()? {
-                                info!("Received challenge verification");
-                                if nonce != self.state.nonce {
-                                    return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()));
-                                }
-
-                                if challenge == challenge_bytes {
-                                    info!("Challenge verification successful");
-                                    self.protocol.send_message(&OSPHandshakeOut::Close {
-                                        can_continue: true,
-                                        err: None,
-                                    })?;
-                                    Ok(())
-                                } else {
-                                    return Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Challenge failed".to_string()))
-                                }
-                            } else {
-                                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected challenge verification packet".to_string()));
-                            }
-                        } else {
-                            return Err(
-                                self.send_close_err(
-                                    io::ErrorKind::InvalidData,
-                                    format!("Failed to resolve SRV record for {}. Is it located at _osp.{}?", hostname, hostname)
-                                )
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        return Err(
-                            self.send_close_err(
-                                io::ErrorKind::Other,
-                                format!(
-                                    "Failed to resolve SRV record for {}. Is it located at _osp.{}?\n\nFurther Details: {}",
-                                    hostname, hostname, e.to_string()
-                                )
-                            )
-                        );
-                    }
-                }
-            } else {
-                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected identify packet".to_string()));
-            }
+        //     if let OSPHandshakeIn::Identify { hostname } = self.protocol.read_message::<OSPHandshakeIn>()? {
+        //         // todo: check whitelist/blacklist
+        //         info!("Looking up challenge record for {hostname}");
+        //         let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
+        //         let txt_resp = resolver.txt_lookup(format!("_osp.{}", hostname));
+        //         match txt_resp {
+        //             Ok(txt_resp) => {
+        //                 if let Some(record) = txt_resp.iter().next() {
+        //                     info!("Challenge record found");
+        //                     let pub_key = Rsa::public_key_from_pem(record.to_string().as_bytes())?;
+        //                     let mut challenge_bytes = [0; 256];
+        //                     rand_bytes(&mut challenge_bytes).unwrap();
+        //                     let mut encrypted_challenge = vec![0u8; pub_key.size() as usize];
+        //                     pub_key.public_encrypt(&challenge_bytes, &mut encrypted_challenge, Padding::PKCS1)?;
+        //                     self.protocol.send_message(&OSPHandshakeOut::Challenge {
+        //                         encrypted_challenge,
+        //                         nonce: self.state.nonce,
+        //                     })?;
+        //
+        //                     if let OSPHandshakeIn::Verify { challenge, nonce } = self.protocol.read_message::<OSPHandshakeIn>()? {
+        //                         info!("Received challenge verification");
+        //                         if nonce != self.state.nonce {
+        //                             return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()));
+        //                         }
+        //
+        //                         if challenge == challenge_bytes {
+        //                             info!("Challenge verification successful");
+        //                             self.protocol.send_message(&OSPHandshakeOut::Close {
+        //                                 can_continue: true,
+        //                                 err: None,
+        //                             })?;
+        //                             Ok(())
+        //                         } else {
+        //                             return Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Challenge failed".to_string()))
+        //                         }
+        //                     } else {
+        //                         return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected challenge verification packet".to_string()));
+        //                     }
+        //                 } else {
+        //                     return Err(
+        //                         self.send_close_err(
+        //                             io::ErrorKind::InvalidData,
+        //                             format!("Failed to resolve SRV record for {}. Is it located at _osp.{}?", hostname, hostname)
+        //                         )
+        //                     );
+        //                 }
+        //             }
+        //             Err(e) => {
+        //                 return Err(
+        //                     self.send_close_err(
+        //                         io::ErrorKind::Other,
+        //                         format!(
+        //                             "Failed to resolve SRV record for {}. Is it located at _osp.{}?\n\nFurther Details: {}",
+        //                             hostname, hostname, e.to_string()
+        //                         )
+        //                     )
+        //                 );
+        //             }
+        //         }
+        //     } else {
+        //         return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected identify packet".to_string()));
+        //     }
         } else {
             return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected hello packet".to_string()));
         }

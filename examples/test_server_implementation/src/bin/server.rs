@@ -30,10 +30,10 @@ struct Args {
     /// Used to identify myself during the handshake
     #[arg(long)]
     hostname: String,
-
-    /// Servers to open outbound connections to
-    #[arg(long)]
-    push_to: Vec<String>
+    //
+    // /// Servers to open outbound connections to
+    // #[arg(long)]
+    // push_to: Vec<String>
 }
 
 fn main() {
@@ -63,25 +63,25 @@ fn main() {
         GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
     });
 
-    for uri in args.push_to {
-        let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
-        info!("url: {osp_url}");
-        let n = Arc::clone(&node);
-        GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
-        std::thread::spawn(move || {
-            // We need to catch panics to reliably signal exit of a thread
-            let result = panic::catch_unwind(move || {
-                info!("Starting outbound thread");
-                n.lock().unwrap().test_outbound(osp_url);
-            });
-            // process errors
-            match result {
-                _ => {}
-            }
-            // signal thread exit
-            GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
-        });
-    }
+    // for uri in args.push_to {
+    //     let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
+    //     info!("url: {osp_url}");
+    //     let n = Arc::clone(&node);
+    //     GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
+    //     std::thread::spawn(move || {
+    //         // We need to catch panics to reliably signal exit of a thread
+    //         let result = panic::catch_unwind(move || {
+    //             info!("Starting outbound thread");
+    //             n.lock().unwrap().test_outbound(osp_url);
+    //         });
+    //         // process errors
+    //         match result {
+    //             _ => {}
+    //         }
+    //         // signal thread exit
+    //         GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
+    //     });
+    // }
 
     while GLOBAL_THREAD_COUNT.load(Ordering::SeqCst) != 0 {
         std::thread::sleep(Duration::from_millis(1));

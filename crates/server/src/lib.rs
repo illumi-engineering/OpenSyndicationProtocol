@@ -1,4 +1,4 @@
 mod node;
-mod connection;
+pub mod connection;
 
 pub use {node::OSProtocolNode};
