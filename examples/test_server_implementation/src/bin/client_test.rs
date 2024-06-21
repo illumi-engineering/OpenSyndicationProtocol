@@ -1,8 +1,13 @@
-use std::fs;
+use std::{fs, panic};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 use clap::{Parser};
 use log::{error, info};
 use openssl::rsa::Rsa;
 use osp_server_sdk::connection::outbound::OutboundConnection;
+
+
+static GLOBAL_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -28,12 +33,29 @@ fn main() {
 
     let mut conn = OutboundConnection::create_with_socket_addr(args.address.parse().unwrap(), key, args.hostname).unwrap();
 
-    match conn.begin() {
-        Ok(_) => {
-            info!("Connection Finished Successfully")
-        },
-        Err(e) => {
-            error!("Connection finished with error: {e}")
+    std::thread::spawn(move || {
+        // We need to catch panics to reliably signal exit of a thread
+        let result = panic::catch_unwind(move || {
+            info!("Starting outbound thread");
+            match conn.begin() {
+                Ok(_) => {
+                    info!("Connection Finished Successfully")
+                },
+                Err(e) => {
+                    error!("Connection finished with error: {e}")
+                }
+            }
+        });
+        // process errors
+        match result {
+            _ => {}
         }
+        // signal thread exit
+        GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
+
+    });
+
+    while GLOBAL_THREAD_COUNT.load(Ordering::SeqCst) != 0 {
+        std::thread::sleep(Duration::from_millis(1));
     }
 }
