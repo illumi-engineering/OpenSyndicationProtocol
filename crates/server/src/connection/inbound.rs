@@ -46,7 +46,7 @@ impl InboundConnection<HandshakeState> {
         self.protocol.send_message(&OSPHandshakeOut::Close {
             can_continue: false,
             err: Some(err.clone()),
-        }).await?;
+        }).await.unwrap();
         io::Error::new(error_kind, err)
     }
 
@@ -124,7 +124,7 @@ impl InboundConnection<HandshakeState> {
         //         return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected identify packet".to_string()));
         //     }
         } else {
-            return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected hello packet".to_string()));
+            return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected hello packet".to_string()).await);
         }
     }
 }

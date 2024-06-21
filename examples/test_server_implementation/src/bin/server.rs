@@ -46,9 +46,7 @@ async fn main() -> io::Result<()> {
         .hostname(args.hostname)
         .build();
 
-    tokio::spawn(async move || {
-        node.listen()
-    })?
+    node.listen().await
 
     // for uri in args.push_to {
     //     let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());

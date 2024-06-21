@@ -60,7 +60,7 @@ impl OSProtocolNode {
 
     pub async fn listen(&self) -> io::Result<()> {
         let port = self.bind_addr.port();
-        let listener = TcpListener::bind(self.bind_addr)?;
+        let listener = TcpListener::bind(self.bind_addr).await?;
         info!("Listening started on port {port}, ready to accept connections");
         loop {
             // The second item contains the IP and port of the new connection.
