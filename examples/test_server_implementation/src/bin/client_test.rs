@@ -29,7 +29,7 @@ fn main() {
     let args = Args::parse();
 
     let key_contents = fs::read_to_string(args.private_key.clone()).expect(format!("Unable to open private key file {}", args.private_key).as_str());
-    let key = Rsa::private_key_from_pem(key_contents.as_bytes())?;
+    let key = Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap();
 
     GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
     std::thread::spawn(move || {

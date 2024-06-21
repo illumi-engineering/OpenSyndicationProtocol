@@ -15,25 +15,10 @@ pub struct OutboundConnection<TState> {
     state: TState
 }
 
-struct WaitingState {}
+pub struct WaitingState {}
 
-struct HandshakeState {
+pub struct HandshakeState {
     protocol: Protocol,
-}
-
-impl TryInto<OutboundConnection<HandshakeState>> for OutboundConnection<WaitingState> {
-    type Error = io::Error;
-
-    fn try_into(self) -> Result<OutboundConnection<HandshakeState>, Self::Error> {
-        Ok(OutboundConnection {
-            private_key: self.private_key,
-            hostname: self.hostname,
-            addr: self.addr,
-            state: HandshakeState {
-                protocol: Protocol::connect(self.addr)?,
-            },
-        })
-    }
 }
 
 impl OutboundConnection<WaitingState> {
@@ -68,7 +53,14 @@ impl OutboundConnection<WaitingState> {
 
     pub fn begin(&mut self) -> io::Result<OutboundConnection<HandshakeState>> {
         info!("Starting outbound connection");
-        self.try_into()
+        Ok(OutboundConnection {
+            private_key: self.private_key.clone(),
+            hostname: self.hostname.clone(),
+            addr: self.addr.clone(),
+            state: HandshakeState {
+                protocol: Protocol::connect(self.addr)?,
+            },
+        })
     }
 }
 
