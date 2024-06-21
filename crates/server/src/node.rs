@@ -56,26 +56,28 @@ impl OSProtocolNode {
         }
     }
 
-    pub fn listen(&self) {
+    pub async fn listen(&self) -> io::Result<()> {
         let port = self.bind_addr.port();
-        let listener = TcpListener::bind(self.bind_addr).unwrap();
+        let listener = TcpListener::bind(self.bind_addr)?;
         info!("Listening started on port {port}, ready to accept connections");
-        for stream in listener.incoming() {
-            if let Ok(stream) = stream {
-                info!("Accepting a new connection from {}",
-                         stream
-                             .peer_addr()
-                             .map(|addr| addr.to_string())
-                             .unwrap_or("unknown address".to_string())
-                );
+        loop {
+            // The second item contains the IP and port of the new connection.
+            let (stream, _) = listener.accept().await?;
 
-                self.clone().start_connection(stream);
-            }
+            info!(
+                "Accepting a new connection from {}",
+                stream
+                    .peer_addr()
+                    .map(|addr| addr.to_string())
+                    .unwrap_or("unknown address".to_string())
+            );
+
+            self.start_connection(stream);
         }
     }
 
     fn start_connection(&self, stream: TcpStream) {
-        std::thread::spawn(move | | {
+        tokio::spawn(async move {
             let mut connection_handshake = InboundConnection::with_stream(stream).unwrap();
             match connection_handshake.begin() {
                 Ok(_) => {

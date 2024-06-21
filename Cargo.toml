@@ -10,3 +10,4 @@ members = [
 osp_protocol = { version = "=0.0.1", path = "crates/protocol" }
 osp_server_sdk = { version = "=0.0.1", path = "crates/server" }
 osp_client_sdk = { version = "=0.0.1", path = "crates/client" }
+

@@ -1,8 +1,8 @@
-use std::io;
-use std::net::TcpStream;
 use log::info;
 use openssl::rand::rand_bytes;
 use openssl::rsa::{Padding, Rsa};
+use tokio::io;
+use tokio::net::TcpStream;
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::Resolver;
 use uuid::Uuid;
@@ -42,22 +42,22 @@ impl InboundConnection<HandshakeState> {
         })
     }
 
-    fn send_close_err(&mut self, error_kind: io::ErrorKind, err: String) -> io::Error {
+    async fn send_close_err(&mut self, error_kind: io::ErrorKind, err: String) -> io::Error {
         self.protocol.send_message(&OSPHandshakeOut::Close {
             can_continue: false,
             err: Some(err.clone()),
-        }).unwrap();
+        }).await?;
         io::Error::new(error_kind, err)
     }
 
-    pub fn begin(&mut self) -> io::Result<()> {
-        if let OSPHandshakeIn::Hello { connection_type } = self.protocol.read_message::<OSPHandshakeIn>()? {
+    pub async fn begin(&mut self) -> io::Result<()> {
+        if let OSPHandshakeIn::Hello { connection_type } = self.protocol.read_message::<OSPHandshakeIn>().await? {
             self.connection_type = connection_type;
 
             self.protocol.send_message(&OSPHandshakeOut::Acknowledge {
                 ok: true,
                 err: None
-            })?;
+            }).await?;
 
             Ok(())
 

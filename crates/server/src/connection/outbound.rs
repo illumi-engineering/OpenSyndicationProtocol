@@ -1,4 +1,4 @@
-use std::io;
+use tokio::io;
 use std::net::{IpAddr, SocketAddr};
 use log::{error, info};
 use openssl::pkey::Private;
@@ -65,12 +65,12 @@ impl OutboundConnection<WaitingState> {
 }
 
 impl OutboundConnection<HandshakeState> {
-    pub fn handshake(&mut self) -> io::Result<()> {
+    pub async fn handshake(&mut self) -> io::Result<()> {
         let addr = self.addr;
         info!("<{addr}> Starting outbound handshake");
         let hostname = self.hostname.clone();
         let private_key = self.private_key.clone();
-        self.state.protocol.send_message(&OSPHandshakeIn::Hello { connection_type: ConnectionType::Server })?;
+        self.state.protocol.send_message(&OSPHandshakeIn::Hello { connection_type: ConnectionType::Server }).await?;
 
         // if let OSPHandshakeOut::Acknowledge {
         //     ok,

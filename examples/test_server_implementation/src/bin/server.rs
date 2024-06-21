@@ -1,5 +1,5 @@
 use std::net::{SocketAddr, SocketAddrV4};
-use std::panic;
+use std::{io, panic};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -35,33 +35,20 @@ struct Args {
     // #[arg(long)]
     // push_to: Vec<String>
 }
-
-fn main() {
+#[tokio::main]
+async fn main() -> io::Result<()> {
     colog::init();
     let args = Args::parse();
     let addr = SocketAddrV4::new(args.bind.parse().expect("Invalid bind address"), args.port);
-    let node = Arc::new(Mutex::new(
-        OSProtocolNode::builder()
-            .bind_to(SocketAddr::from(addr))
-            .private_key_file(args.private_key)
-            .hostname(args.hostname)
-            .build()
-    ));
+    let node = OSProtocolNode::builder()
+        .bind_to(SocketAddr::from(addr))
+        .private_key_file(args.private_key)
+        .hostname(args.hostname)
+        .build();
 
-    let n = Arc::clone(&node);
-    GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
-    std::thread::spawn(move || {
-        // We need to catch panics to reliably signal exit of a thread
-        let result = panic::catch_unwind(move || {
-            n.lock().unwrap().listen();
-        });
-        // process errors
-        match result {
-            _ => {}
-        }
-        // signal thread exit
-        GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
-    });
+    tokio::spawn(async move || {
+        node.listen()
+    })?
 
     // for uri in args.push_to {
     //     let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
@@ -83,7 +70,4 @@ fn main() {
     //     });
     // }
 
-    while GLOBAL_THREAD_COUNT.load(Ordering::SeqCst) != 0 {
-        std::thread::sleep(Duration::from_millis(1));
-    }
 }
