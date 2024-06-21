@@ -90,9 +90,10 @@ impl OSProtocolNode {
         });
     }
 
-    pub fn test_outbound(&self, url: OSPUrl) {
+    pub async fn test_outbound(&self, url: OSPUrl) -> io::Result<()> {
         info!("Testing outbound connection to {url}");
         let mut conn = OutboundConnection::create(url, self.private_key.clone(), self.hostname.clone()).unwrap();
-        conn.begin().unwrap();
+        let mut conn_in_handshake = conn.begin().await?;
+        conn_in_handshake.handshake().await
     }
 }
