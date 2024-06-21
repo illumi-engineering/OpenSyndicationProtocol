@@ -23,10 +23,8 @@ struct Args {
 fn main() {
     let args = Args::parse();
 
-    // let key_contents = fs::read_to_string(args.private_key.clone()).expect(format!("Unable to open private key file {}", args.private_key).as_str());
-    // let key = Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap();
-
-    let key = Rsa::generate(4096).unwrap();
+    let key_contents = fs::read_to_string(args.private_key.clone()).expect(format!("Unable to open private key file {}", args.private_key).as_str());
+    let key = Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap();
 
     let mut conn = OutboundConnection::create_with_socket_addr(args.address.parse().unwrap(), key, args.hostname).unwrap();
 
