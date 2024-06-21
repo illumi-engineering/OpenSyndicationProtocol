@@ -29,30 +29,13 @@ fn main() {
     let args = Args::parse();
 
     let key_contents = fs::read_to_string(args.private_key.clone()).expect(format!("Unable to open private key file {}", args.private_key).as_str());
-    let key = Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap();
-
-    let mut conn = OutboundConnection::create_with_socket_addr(args.address.parse().unwrap(), key, args.hostname).unwrap();
+    let key = Rsa::private_key_from_pem(key_contents.as_bytes())?;
 
     std::thread::spawn(move || {
-        // We need to catch panics to reliably signal exit of a thread
-        let result = panic::catch_unwind(move || {
-            info!("Starting outbound thread");
-            match conn.begin() {
-                Ok(_) => {
-                    info!("Connection Finished Successfully")
-                },
-                Err(e) => {
-                    error!("Connection finished with error: {e}")
-                }
-            }
-        });
-        // process errors
-        match result {
-            _ => {}
-        }
-        // signal thread exit
-        GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
-
+        info!("Starting outbound thread");
+        let mut conn = OutboundConnection::create_with_socket_addr(args.address.parse().unwrap(), key, args.hostname)?;
+        let mut conn_in_handshake = conn.begin()?;
+        conn_in_handshake.handshake()
     });
 
     while GLOBAL_THREAD_COUNT.load(Ordering::SeqCst) != 0 {

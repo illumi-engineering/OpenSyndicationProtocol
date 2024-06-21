@@ -8,13 +8,35 @@ use trust_dns_resolver::Resolver;
 use url::quirks::port;
 use osp_protocol::{ConnectionType, OSPHandshakeIn, OSPHandshakeOut, OSPUrl, Protocol};
 
-pub struct OutboundConnection {
-    protocol: Protocol,
+pub struct OutboundConnection<TState> {
     private_key: Rsa<Private>,
     hostname: String,
+    addr: SocketAddr,
+    state: TState
 }
 
-impl OutboundConnection {
+struct WaitingState {}
+
+struct HandshakeState {
+    protocol: Protocol,
+}
+
+impl TryInto<OutboundConnection<HandshakeState>> for OutboundConnection<WaitingState> {
+    type Error = io::Error;
+
+    fn try_into(self) -> Result<OutboundConnection<HandshakeState>, Self::Error> {
+        Ok(OutboundConnection {
+            private_key: self.private_key,
+            hostname: self.hostname,
+            addr: self.addr,
+            state: HandshakeState {
+                protocol: Protocol::connect(self.addr)?,
+            },
+        })
+    }
+}
+
+impl OutboundConnection<WaitingState> {
     pub fn create(url: OSPUrl, private_key: Rsa<Private>, hostname: String) -> io::Result<Self> {
         info!("Resolving osp connection to {url}");
         let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
@@ -37,17 +59,26 @@ impl OutboundConnection {
         info!("Opening connection to {addr}");
 
         Ok(Self {
-            protocol: Protocol::connect(addr)?,
             private_key,
             hostname,
+            addr,
+            state: WaitingState {}
         })
     }
 
-    pub fn begin(&mut self) -> io::Result<()> {
-        info!("Starting outbound handshake");
+    pub fn begin(&mut self) -> io::Result<OutboundConnection<HandshakeState>> {
+        info!("Starting outbound connection");
+        self.try_into()
+    }
+}
+
+impl OutboundConnection<HandshakeState> {
+    pub fn handshake(&mut self) -> io::Result<()> {
+        let addr = self.addr;
+        info!("<{addr}> Starting outbound handshake");
         let hostname = self.hostname.clone();
         let private_key = self.private_key.clone();
-        self.protocol.send_message(&OSPHandshakeIn::Hello { connection_type: ConnectionType::Server })?;
+        self.state.protocol.send_message(&OSPHandshakeIn::Hello { connection_type: ConnectionType::Server })?;
 
         // if let OSPHandshakeOut::Acknowledge {
         //     ok,
@@ -95,7 +126,7 @@ impl OutboundConnection {
         //         error!("Hello failed: {}", err.unwrap());
         //     }
         // }
-
         Ok(())
     }
+
 }
