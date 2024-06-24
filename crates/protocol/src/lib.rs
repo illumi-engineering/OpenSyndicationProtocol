@@ -13,8 +13,8 @@
 // }
 
 mod protocol;
-mod handshake;
 mod utils;
 mod url;
+mod packet;
 
-pub use {protocol::*, handshake::*, url::OSPUrl};
+pub use {protocol::*, packet::*, url::OSPUrl, utils::ConnectionType};

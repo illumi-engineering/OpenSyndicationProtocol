@@ -6,10 +6,10 @@ use tokio::net::TcpStream;
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::Resolver;
 use uuid::Uuid;
-use osp_protocol::{ConnectionType, OSPHandshakeIn, OSPHandshakeOut, Protocol};
+use osp_protocol::{Protocol};
+use osp_protocol::;
 
 pub struct InboundConnection<TState> {
-    protocol: Protocol,
     connection_type: ConnectionType,
     state: TState
 }
@@ -51,7 +51,7 @@ impl InboundConnection<HandshakeState> {
     }
 
     pub async fn begin(&mut self) -> io::Result<()> {
-        if let OSPHandshakeIn::Hello { connection_type } = self.protocol.read_message::<OSPHandshakeIn>().await? {
+        if let OSPHandshakeIn::Hello { connection_type } = self.protocol.read_frame::<OSPHandshakeIn>().await? {
             self.connection_type = connection_type;
 
             self.protocol.send_message(&OSPHandshakeOut::Acknowledge {
