@@ -79,20 +79,20 @@ impl OutboundConnection<HandshakeState> {
         let private_key = self.private_key.clone();
         self.state.protocol.send_message(HandshakePacketGuestToHost::Hello { connection_type: ConnectionType::Server }).await?;
 
-        if let HandshakePacketHostToGuest::Acknowledge {
+        if let Some(HandshakePacketHostToGuest::Acknowledge {
             ok,
             err
-        } = self.state.protocol.read_frame().await? {
+        }) = self.state.protocol.read_frame().await? {
             if ok {
                 info!("Handshake acknowledged");
                 self.state.protocol.send_message(HandshakePacketGuestToHost::Identify {
                     hostname,
                 }).await?;
 
-                if let HandshakePacketHostToGuest::Challenge {
+                if let Some(HandshakePacketHostToGuest::Challenge {
                     nonce,
                     encrypted_challenge
-                } = self.state.protocol.read_frame().await? {
+                }) = self.state.protocol.read_frame().await? {
                     info!("Challenge received, decrypting");
                     let mut decrypt_buf = vec![0u8; private_key.size() as usize];
                     private_key.private_decrypt(&*encrypted_challenge, &mut *decrypt_buf, Padding::PKCS1)?;
@@ -103,10 +103,10 @@ impl OutboundConnection<HandshakeState> {
                         challenge: decrypt_buf,
                     }).await?;
 
-                    if let HandshakePacketHostToGuest::Close {
+                    if let Some(HandshakePacketHostToGuest::Close {
                         can_continue,
                         err,
-                    } = self.state.protocol.read_frame().await? {
+                    }) = self.state.protocol.read_frame().await? {
                         if can_continue {
                             info!("Handshake successful!")
                         } else {

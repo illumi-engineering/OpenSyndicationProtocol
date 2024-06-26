@@ -173,7 +173,7 @@ impl<PacketType: SerializePacket> PacketEncoder<PacketType> {
     }
 }
 
-impl<PacketType: DeserializePacket + SerializePacket> Encoder<PacketType> for PacketEncoder<PacketType> {
+impl<PacketType: SerializePacket> Encoder<PacketType> for PacketEncoder<PacketType> {
     type Error = io::Error;
 
     fn encode(&mut self, item: PacketType, dst: &mut BytesMut) -> Result<(), Self::Error> {

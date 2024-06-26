@@ -12,7 +12,7 @@ use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use uuid::Uuid;
 
 use osp_protocol::{ConnectionType, Protocol};
-use osp_protocol::packet::PacketEncoder;
+use osp_protocol::packet::{PacketDecoder, PacketEncoder};
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
 use osp_protocol::packet::transfer::{TransferPacketGuestToHost, TransferPacketHostToGuest};
 
@@ -34,9 +34,14 @@ impl From<InboundConnection<HandshakeState>> for InboundConnection<TransferState
         InboundConnection {
             connection_type: value.connection_type,
             state: TransferState {
-                protocol: value.state.protocol.map_codec(|codec| {
-                    PacketEncoder::new() // Transfer packet types implied!
-                }),
+                protocol: value.state.protocol.map_codecs(
+                    |codec| {
+                        PacketDecoder::new() // Transfer packet types implied!
+                    },
+                    |codec| {
+                        PacketEncoder::new()
+                    }
+                ),
             },
         }
     }
@@ -62,7 +67,7 @@ impl InboundConnection<HandshakeState> {
     }
 
     pub async fn begin(&mut self) -> io::Result<()> {
-        if let HandshakePacketGuestToHost::Hello { connection_type } = self.state.protocol.read_frame().await? {
+        if let Some(HandshakePacketGuestToHost::Hello { connection_type }) = self.state.protocol.read_frame().await? {
             self.connection_type = connection_type;
 
             self.state.protocol.send_message(HandshakePacketHostToGuest::Acknowledge {
@@ -70,7 +75,7 @@ impl InboundConnection<HandshakeState> {
                 err: None
             }).await?;
 
-            if let HandshakePacketGuestToHost::Identify { hostname } = self.state.protocol.read_frame().await? {
+            if let Some(HandshakePacketGuestToHost::Identify { hostname }) = self.state.protocol.read_frame().await? {
                 // todo: check whitelist/blacklist
                 info!("Looking up challenge record for {hostname}");
                 let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
@@ -89,10 +94,10 @@ impl InboundConnection<HandshakeState> {
                                 nonce: self.state.nonce,
                             }).await?;
 
-                            if let HandshakePacketGuestToHost::Verify { challenge, nonce } = self.state.protocol.read_frame()? {
+                            if let Some(HandshakePacketGuestToHost::Verify { challenge, nonce }) = self.state.protocol.read_frame().await? {
                                 info!("Received challenge verification");
                                 if nonce != self.state.nonce {
-                                    return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()));
+                                    return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()).await);
                                 }
 
                                 if challenge == challenge_bytes {
@@ -103,17 +108,17 @@ impl InboundConnection<HandshakeState> {
                                     }).await?;
                                     Ok(())
                                 } else {
-                                    return Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Challenge failed".to_string()))
+                                    return Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Challenge failed".to_string()).await)
                                 }
                             } else {
-                                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected challenge verification packet".to_string()));
+                                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected challenge verification packet".to_string()).await);
                             }
                         } else {
                             return Err(
                                 self.send_close_err(
                                     io::ErrorKind::InvalidData,
                                     format!("Failed to resolve SRV record for {}. Is it located at _osp.{}?", hostname, hostname)
-                                )
+                                ).await
                             );
                         }
                     }
@@ -125,12 +130,12 @@ impl InboundConnection<HandshakeState> {
                                     "Failed to resolve SRV record for {}. Is it located at _osp.{}?\n\nFurther Details: {}",
                                     hostname, hostname, e.to_string()
                                 )
-                            )
+                            ).await
                         );
                     }
                 }
             } else {
-                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected identify packet".to_string()));
+                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected identify packet".to_string()).await);
             }
         } else {
             return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected hello packet".to_string()).await);
