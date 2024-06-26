@@ -600,6 +600,7 @@ name = "osp_protocol"
 version = "0.0.1"
 dependencies = [
  "bytes 1.6.0",
+ "futures-sink",
  "futures-util",
  "tokio",
  "tokio-byteorder",
