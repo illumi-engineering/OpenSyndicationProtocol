@@ -4,7 +4,8 @@ use tokio::io;
 use tokio_util::codec::{Decoder, Encoder};
 use uuid::Uuid;
 
-pub mod server;
+pub mod handshake;
+pub mod transfer;
 
 const PACKET_MAX_LENGTH: usize = 8 * 1024 * 1024;
 
