@@ -1,15 +1,20 @@
 use log::info;
+
 use openssl::rand::rand_bytes;
 use openssl::rsa::{Padding, Rsa};
+
 use tokio::io;
 use tokio::net::TcpStream;
-use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+
 use trust_dns_resolver::Resolver;
+use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+
 use uuid::Uuid;
-use osp_protocol::{ConnectionType, PacketDecoder, Protocol};
-use osp_protocol::handshake::{HandshakePacket, HandshakePacketIn, HandshakePacketOut};
+
+use osp_protocol::{ConnectionType, Protocol};
+use osp_protocol::packet::PacketEncoder;
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
-use osp_protocol::transfer::TransferPacket;
+use osp_protocol::packet::transfer::{TransferPacketGuestToHost, TransferPacketHostToGuest};
 
 pub struct InboundConnection<TState> {
     connection_type: ConnectionType,
@@ -21,7 +26,7 @@ pub struct HandshakeState {
     protocol: Protocol<HandshakePacketGuestToHost, HandshakePacketHostToGuest>
 }
 pub struct TransferState {
-    protocol: Protocol<TransferPacket>
+    protocol: Protocol<TransferPacketGuestToHost, TransferPacketHostToGuest>
 }
 
 impl From<InboundConnection<HandshakeState>> for InboundConnection<TransferState> {
@@ -30,7 +35,7 @@ impl From<InboundConnection<HandshakeState>> for InboundConnection<TransferState
             connection_type: value.connection_type,
             state: TransferState {
                 protocol: value.state.protocol.map_codec(|codec| {
-                    PacketDecoder::new() // TransferPacket type implied!
+                    PacketEncoder::new() // Transfer packet types implied!
                 }),
             },
         }

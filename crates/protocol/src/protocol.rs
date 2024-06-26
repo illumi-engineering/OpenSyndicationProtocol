@@ -1,10 +1,14 @@
 use std::net::{SocketAddr};
+
 use futures_util::SinkExt;
-use tokio::net::{TcpStream};
+
 use tokio::io::{self};
+use tokio::net::{TcpStream};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
+
 use crate::packet::{DeserializePacket, PacketDecoder, PacketEncoder, SerializePacket};
 
 pub struct Protocol<InPacketType: DeserializePacket, OutPacketType : SerializePacket> {

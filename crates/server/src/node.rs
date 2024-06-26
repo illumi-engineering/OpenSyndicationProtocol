@@ -1,11 +1,14 @@
-use std::{fs, net::{SocketAddr}};
-use std::net::{IpAddr, Ipv4Addr};
+use std::{fs, net::{SocketAddr, IpAddr, Ipv4Addr}};
+
 use log::info;
 use openssl::pkey::Private;
 use openssl::rsa::Rsa;
+
 use tokio::io;
 use tokio::net::{TcpListener, TcpStream};
+
 use osp_protocol::OSPUrl;
+
 use crate::connection::inbound::{InboundConnection, TransferState};
 use crate::connection::outbound::OutboundConnection;
 

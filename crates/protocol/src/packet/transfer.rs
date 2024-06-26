@@ -1,19 +1,39 @@
 use bytes::BytesMut;
-use crate::{DeserializePacket, SerializePacket};
-pub enum TransferPacket {
+use tokio::io;
+use crate::packet::{DeserializePacket, SerializePacket};
+
+pub enum TransferPacketGuestToHost {
 
 }
 
-impl SerializePacket for TransferPacket {
-    fn serialize(&self, buf: &mut BytesMut) -> std::io::Result<usize> {
+pub enum TransferPacketHostToGuest {
+
+}
+
+impl SerializePacket for TransferPacketGuestToHost {
+    fn serialize(&self, buf: &mut BytesMut) -> io::Result<usize> {
         todo!()
     }
 }
 
-impl DeserializePacket for TransferPacket {
-    type Output =TransferPacket;
+impl DeserializePacket for TransferPacketGuestToHost {
+    type Output = TransferPacketGuestToHost;
 
-    fn deserialize(buf: &mut BytesMut) -> std::io::Result<Self::Output> {
+    fn deserialize(buf: &mut BytesMut) -> io::Result<Self::Output> {
+        todo!()
+    }
+}
+
+impl SerializePacket for TransferPacketHostToGuest {
+    fn serialize(&self, buf: &mut BytesMut) -> io::Result<usize> {
+        todo!()
+    }
+}
+
+impl DeserializePacket for TransferPacketHostToGuest {
+    type Output = TransferPacketHostToGuest;
+
+    fn deserialize(buf: &mut BytesMut) -> io::Result<Self::Output> {
         todo!()
     }
 }

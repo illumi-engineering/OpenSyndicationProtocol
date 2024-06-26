@@ -1,7 +1,10 @@
 use std::marker::PhantomData;
+
 use bytes::{Buf, BufMut, BytesMut};
+
 use tokio::io;
 use tokio_util::codec::{Decoder, Encoder};
+
 use uuid::Uuid;
 
 pub mod handshake;
@@ -202,7 +205,7 @@ impl<PacketType: DeserializePacket + SerializePacket> Encoder<PacketType> for Pa
 mod tests {
     use tokio::io;
     use bytes::{Buf, BufMut, BytesMut};
-    use crate::{DeserializePacket, SerializePacket};
+    use crate::packet::{DeserializePacket, SerializePacket};
 
     /// A basic test packet for validating basic serialization and
     /// deserialization of values that implement [SerializePacket] and
