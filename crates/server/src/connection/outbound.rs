@@ -6,7 +6,8 @@ use openssl::rsa::{Padding, Rsa};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::Resolver;
 use url::quirks::port;
-use osp_protocol::{ConnectionType, OSPHandshakeIn, OSPHandshakeOut, OSPUrl, Protocol};
+use osp_protocol::{ConnectionType, OSPUrl, Protocol};
+use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
 
 pub struct OutboundConnection<TState> {
     private_key: Rsa<Private>,
@@ -18,7 +19,7 @@ pub struct OutboundConnection<TState> {
 pub struct WaitingState {}
 
 pub struct HandshakeState {
-    protocol: Protocol,
+    protocol: Protocol<HandshakePacketHostToGuest, HandshakePacketGuestToHost>, // packet types reversed
 }
 
 impl OutboundConnection<WaitingState> {
@@ -70,54 +71,54 @@ impl OutboundConnection<HandshakeState> {
         info!("<{addr}> Starting outbound handshake");
         let hostname = self.hostname.clone();
         let private_key = self.private_key.clone();
-        self.state.protocol.send_message(&OSPHandshakeIn::Hello { connection_type: ConnectionType::Server }).await?;
+        self.state.protocol.send_message(HandshakePacketGuestToHost::Hello { connection_type: ConnectionType::Server }).await?;
 
-        // if let OSPHandshakeOut::Acknowledge {
-        //     ok,
-        //     err
-        // } = self.protocol.read_message::<OSPHandshakeOut>()? {
-        //     if ok {
-        //         info!("Handshake acknowledged");
-        //         self.protocol.send_message(&OSPHandshakeIn::Identify {
-        //             hostname,
-        //         })?;
-        //
-        //         if let OSPHandshakeOut::Challenge {
-        //             nonce,
-        //             encrypted_challenge
-        //         } = self.protocol.read_message::<OSPHandshakeOut>()? {
-        //             info!("Challenge received, decrypting");
-        //             let mut decrypt_buf = vec![0u8; private_key.size() as usize];
-        //             private_key.private_decrypt(&*encrypted_challenge, &mut *decrypt_buf, Padding::PKCS1)?;
-        //
-        //             info!("Sending decrypted challenge");
-        //             self.protocol.send_message(&OSPHandshakeIn::Verify {
-        //                 nonce,
-        //                 challenge: decrypt_buf,
-        //             })?;
-        //
-        //             if let OSPHandshakeOut::Close {
-        //                 can_continue,
-        //                 err,
-        //             } = self.protocol.read_message::<OSPHandshakeOut>()? {
-        //                 if can_continue {
-        //                     info!("Handshake successful!")
-        //                 } else {
-        //                     match err {
-        //                         None => {
-        //                             error!("Unknown handshake err");
-        //                         }
-        //                         Some(e) => {
-        //                             error!("Handshake err: {}", e);
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     } else {
-        //         error!("Hello failed: {}", err.unwrap());
-        //     }
-        // }
+        if let HandshakePacketHostToGuest::Acknowledge {
+            ok,
+            err
+        } = self.state.protocol.read_frame().await? {
+            if ok {
+                info!("Handshake acknowledged");
+                self.state.protocol.send_message(HandshakePacketGuestToHost::Identify {
+                    hostname,
+                }).await?;
+
+                if let HandshakePacketHostToGuest::Challenge {
+                    nonce,
+                    encrypted_challenge
+                } = self.state.protocol.read_frame().await? {
+                    info!("Challenge received, decrypting");
+                    let mut decrypt_buf = vec![0u8; private_key.size() as usize];
+                    private_key.private_decrypt(&*encrypted_challenge, &mut *decrypt_buf, Padding::PKCS1)?;
+
+                    info!("Sending decrypted challenge");
+                    self.state.protocol.send_message(HandshakePacketGuestToHost::Verify {
+                        nonce,
+                        challenge: decrypt_buf,
+                    }).await?;
+
+                    if let HandshakePacketHostToGuest::Close {
+                        can_continue,
+                        err,
+                    } = self.state.protocol.read_frame().await? {
+                        if can_continue {
+                            info!("Handshake successful!")
+                        } else {
+                            match err {
+                                None => {
+                                    error!("Unknown handshake err");
+                                }
+                                Some(e) => {
+                                    error!("Handshake err: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                error!("Hello failed: {}", err.unwrap());
+            }
+        }
         Ok(())
     }
 

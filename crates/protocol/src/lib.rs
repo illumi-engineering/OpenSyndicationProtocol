@@ -15,6 +15,6 @@
 mod protocol;
 mod utils;
 mod url;
-mod packet;
+pub mod packet;
 
-pub use {protocol::*, packet::*, url::OSPUrl, utils::ConnectionType};
+pub use {protocol::*, url::OSPUrl, utils::ConnectionType};

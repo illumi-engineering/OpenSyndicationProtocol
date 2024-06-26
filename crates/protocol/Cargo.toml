@@ -13,4 +13,4 @@ tokio-byteorder = "0.3.0"
 bytes = "1.6.0"
 tokio-util = { version = "0.7.11", features = ["compat", "codec"] }
 tokio-stream = { version = "0.1.15", features = ["full"] }
-futures-util = { version = "0.3.30", features = ["sink", "tokio-io", "futures-sink"] }
+futures-util = { version = "0.3.30", features = ["sink", "tokio-io"] }

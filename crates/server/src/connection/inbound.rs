@@ -6,8 +6,9 @@ use tokio::net::TcpStream;
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::Resolver;
 use uuid::Uuid;
-use osp_protocol::{ConnectionType, PacketCodec, Protocol};
-use osp_protocol::handshake::HandshakePacket;
+use osp_protocol::{ConnectionType, PacketDecoder, Protocol};
+use osp_protocol::handshake::{HandshakePacket, HandshakePacketIn, HandshakePacketOut};
+use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
 use osp_protocol::transfer::TransferPacket;
 
 pub struct InboundConnection<TState> {
@@ -17,7 +18,7 @@ pub struct InboundConnection<TState> {
 
 pub struct HandshakeState {
     nonce: Uuid,
-    protocol: Protocol<HandshakePacket>
+    protocol: Protocol<HandshakePacketGuestToHost, HandshakePacketHostToGuest>
 }
 pub struct TransferState {
     protocol: Protocol<TransferPacket>
@@ -29,7 +30,7 @@ impl From<InboundConnection<HandshakeState>> for InboundConnection<TransferState
             connection_type: value.connection_type,
             state: TransferState {
                 protocol: value.state.protocol.map_codec(|codec| {
-                    PacketCodec::new() // TransferPacket type implied!
+                    PacketDecoder::new() // TransferPacket type implied!
                 }),
             },
         }
@@ -48,7 +49,7 @@ impl InboundConnection<HandshakeState> {
     }
 
     async fn send_close_err(&mut self, error_kind: io::ErrorKind, err: String) -> io::Error {
-        self.state.protocol.send_message(HandshakePacket::Close {
+        self.state.protocol.send_message(HandshakePacketHostToGuest::Close {
             can_continue: false,
             err: Some(err.clone()),
         }).await.unwrap();
@@ -56,15 +57,15 @@ impl InboundConnection<HandshakeState> {
     }
 
     pub async fn begin(&mut self) -> io::Result<()> {
-        if let HandshakePacket::Hello { connection_type } = self.state.protocol.read_frame().await? {
+        if let HandshakePacketGuestToHost::Hello { connection_type } = self.state.protocol.read_frame().await? {
             self.connection_type = connection_type;
 
-            self.state.protocol.send_message(HandshakePacket::Acknowledge {
+            self.state.protocol.send_message(HandshakePacketHostToGuest::Acknowledge {
                 ok: true,
                 err: None
             }).await?;
 
-            if let HandshakePacket::Identify { hostname } = self.state.protocol.read_frame().await? {
+            if let HandshakePacketGuestToHost::Identify { hostname } = self.state.protocol.read_frame().await? {
                 // todo: check whitelist/blacklist
                 info!("Looking up challenge record for {hostname}");
                 let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
@@ -78,12 +79,12 @@ impl InboundConnection<HandshakeState> {
                             rand_bytes(&mut challenge_bytes).unwrap();
                             let mut encrypted_challenge = vec![0u8; pub_key.size() as usize];
                             pub_key.public_encrypt(&challenge_bytes, &mut encrypted_challenge, Padding::PKCS1)?;
-                            self.state.protocol.send_message(HandshakePacket::Challenge {
+                            self.state.protocol.send_message(HandshakePacketHostToGuest::Challenge {
                                 encrypted_challenge,
                                 nonce: self.state.nonce,
-                            })?;
+                            }).await?;
 
-                            if let HandshakePacket::Verify { challenge, nonce } = self.state.protocol.read_frame()? {
+                            if let HandshakePacketGuestToHost::Verify { challenge, nonce } = self.state.protocol.read_frame()? {
                                 info!("Received challenge verification");
                                 if nonce != self.state.nonce {
                                     return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()));
@@ -91,10 +92,10 @@ impl InboundConnection<HandshakeState> {
 
                                 if challenge == challenge_bytes {
                                     info!("Challenge verification successful");
-                                    self.state.protocol.send_message(HandshakePacket::Close {
+                                    self.state.protocol.send_message(HandshakePacketHostToGuest::Close {
                                         can_continue: true,
                                         err: None,
-                                    })?;
+                                    }).await?;
                                     Ok(())
                                 } else {
                                     return Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Challenge failed".to_string()))
