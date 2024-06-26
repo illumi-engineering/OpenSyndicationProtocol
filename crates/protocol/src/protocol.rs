@@ -1,6 +1,6 @@
 use std::net::{SocketAddr};
 
-use futures_util::SinkExt;
+use futures::SinkExt;
 
 use tokio::io::{self};
 use tokio::net::{TcpStream};
