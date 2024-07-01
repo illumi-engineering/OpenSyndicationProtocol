@@ -109,6 +109,7 @@ impl OutboundConnection<HandshakeState> {
                     encrypted_challenge
                 }) = self.read_frame_and_handle_err().await? {
                     info!("Challenge received, decrypting");
+                    info!("Connection Nonce: {nonce}");
                     let mut decrypt_buf = vec![0u8; private_key.size() as usize];
                     private_key.private_decrypt(&*encrypted_challenge, &mut *decrypt_buf, Padding::PKCS1)?;
 
