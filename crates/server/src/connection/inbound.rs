@@ -86,7 +86,7 @@ impl InboundConnection<HandshakeState> {
                     Ok(txt_resp) => {
                         if let Some(record) = txt_resp.iter().next() {
                             info!("Challenge record found");
-                            debug!("Challenge record: {record}");
+                            info!("Challenge record: {record}");
                             let pub_key = Rsa::public_key_from_pem(record.to_string().as_bytes())?;
 
                             info!("Generating and encrypting challenge bytes");
