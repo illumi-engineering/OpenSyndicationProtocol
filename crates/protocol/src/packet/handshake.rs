@@ -79,11 +79,11 @@ impl SerializePacket for HandshakePacketGuestToHost {
                 bytes_written += self.write_string(buf, hostname);
             }
             HandshakePacketGuestToHost::Verify { challenge, nonce } => {
+                bytes_written += self.write_uuid(buf, nonce);
+
                 // since this is always 256 bytes we can leave the len header out
                 buf.put_slice(challenge);
                 bytes_written += 256;
-
-                bytes_written += self.write_uuid(buf, nonce);
             }
         }
         Ok(bytes_written)
@@ -134,9 +134,9 @@ impl DeserializePacket for HandshakePacketGuestToHost {
                 hostname: Self::read_string(buf)?,
             }),
             3 => {
+                let nonce = Self::read_uuid(buf);
                 let mut challenge_bytes = vec![0u8; 256];
                 buf.copy_to_slice(&mut challenge_bytes);
-                let nonce = Self::read_uuid(buf);
 
                 Ok(HandshakePacketGuestToHost::Verify {
                     challenge: challenge_bytes,
