@@ -57,6 +57,6 @@ impl<InPacketType: DeserializePacket, OutPacketType : SerializePacket> Protocol<
 
     /// Read a message from the inner [FramedRead]
     pub async fn read_frame(&mut self) -> io::Result<Option<InPacketType::Output>> {
-        Ok(self.read.next().await.unwrap().ok())
+        Ok(self.read.next().await)
     }
 }

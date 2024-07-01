@@ -1,15 +1,7 @@
 use std::net::{SocketAddr, SocketAddrV4};
-use std::{io, panic};
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::{io};
 use clap::Parser;
 use osp_server_sdk::OSProtocolNode;
-use url::Url;
-use log::info;
-use osp_protocol::OSPUrl;
-
-static GLOBAL_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 /// Test implementation of an Open Syndication Protocol server node
 #[derive(Parser, Debug)]

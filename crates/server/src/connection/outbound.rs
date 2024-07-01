@@ -13,7 +13,9 @@ use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use url::quirks::port;
 
 use osp_protocol::{ConnectionType, OSPUrl, Protocol};
+use osp_protocol::packet::{DeserializePacket, SerializePacket};
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
+use crate::connection::ConnectionUtils;
 
 pub struct OutboundConnection<TState> {
     private_key: Rsa<Private>,
@@ -71,6 +73,8 @@ impl OutboundConnection<WaitingState> {
     }
 }
 
+impl ConnectionUtils<HandshakePacketHostToGuest, HandshakePacketGuestToHost> for OutboundConnection<HandshakeState> {}
+
 impl OutboundConnection<HandshakeState> {
     pub async fn handshake(&mut self) -> io::Result<()> {
         let addr = self.addr;
@@ -79,20 +83,20 @@ impl OutboundConnection<HandshakeState> {
         let private_key = self.private_key.clone();
         self.state.protocol.send_message(HandshakePacketGuestToHost::Hello { connection_type: ConnectionType::Server }).await?;
 
-        if let Some(HandshakePacketHostToGuest::Acknowledge {
+        if let HandshakePacketHostToGuest::Acknowledge {
             ok,
             err
-        }) = self.state.protocol.read_frame().await? {
+        } = Self::await_frame_in(&self.state.protocol)? {
             if ok {
                 info!("Handshake acknowledged");
                 self.state.protocol.send_message(HandshakePacketGuestToHost::Identify {
                     hostname,
                 }).await?;
 
-                if let Some(HandshakePacketHostToGuest::Challenge {
+                if let HandshakePacketHostToGuest::Challenge {
                     nonce,
                     encrypted_challenge
-                }) = self.state.protocol.read_frame().await? {
+                } = Self::await_frame_in(&self.state.protocol)? {
                     info!("Challenge received, decrypting");
                     let mut decrypt_buf = vec![0u8; private_key.size() as usize];
                     private_key.private_decrypt(&*encrypted_challenge, &mut *decrypt_buf, Padding::PKCS1)?;
@@ -103,10 +107,10 @@ impl OutboundConnection<HandshakeState> {
                         challenge: decrypt_buf,
                     }).await?;
 
-                    if let Some(HandshakePacketHostToGuest::Close {
+                    if let HandshakePacketHostToGuest::Close {
                         can_continue,
                         err,
-                    }) = self.state.protocol.read_frame().await? {
+                    } = Self::await_frame_in(&self.state.protocol)? {
                         if can_continue {
                             info!("Handshake successful!")
                         } else {
