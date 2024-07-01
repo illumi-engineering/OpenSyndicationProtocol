@@ -205,7 +205,8 @@ impl<PacketType: SerializePacket> Encoder<PacketType> for PacketEncoder<PacketTy
 mod tests {
     use tokio::io;
     use bytes::{Buf, BufMut, BytesMut};
-    use crate::packet::{DeserializePacket, SerializePacket};
+    use uuid::Uuid;
+    use crate::packet::{DeserializePacket, PACKET_MAX_LENGTH, SerializePacket};
 
     /// A basic test packet for validating basic serialization and
     /// deserialization of values that implement [SerializePacket] and
@@ -237,6 +238,29 @@ mod tests {
                 test_bool: buf.get_u8() != 0,
                 test_int: buf.get_u8(),
                 test_string: Self::read_string(buf)?,
+            })
+        }
+    }
+
+    /// A test packet for testing serialization/deserialization of [Uuid].
+    #[derive(PartialEq, Debug)]
+    struct TestUuidPacket {
+        test_uuid: Uuid,
+    }
+
+    impl SerializePacket for TestUuidPacket {
+        fn serialize(&self, buf: &mut BytesMut) -> io::Result<usize> {
+            let bytes_written = self.write_uuid(buf, &self.test_uuid);
+            Ok(bytes_written)
+        }
+    }
+
+    impl DeserializePacket for TestUuidPacket {
+        type Output = TestUuidPacket;
+
+        fn deserialize(buf: &mut BytesMut) -> io::Result<Self::Output> {
+            Ok(TestUuidPacket {
+                test_uuid: Self::read_uuid(buf),
             })
         }
     }
@@ -283,6 +307,25 @@ mod tests {
         let packet = TestPacket::deserialize(buf)?;
 
         assert_eq!(packet, create_test_packet());
+        Ok(())
+    }
+
+    #[test]
+    fn test_uuid_serde() -> io::Result<()> {
+        let buf = &mut BytesMut::with_capacity(PACKET_MAX_LENGTH);
+        let uuid = Uuid::new_v4();
+        let packet = TestUuidPacket {
+            test_uuid: uuid
+        };
+
+        // serialize the packet
+        let bytes_written = packet.serialize(buf)?;
+        assert_eq!(bytes_written, buf.len());
+
+        // deserialize the packet
+        let packet_de = TestUuidPacket::deserialize(buf)?;
+        assert_eq!(packet, packet_de);
+
         Ok(())
     }
 }

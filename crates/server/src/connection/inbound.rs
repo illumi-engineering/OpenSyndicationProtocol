@@ -98,15 +98,15 @@ impl InboundConnection<HandshakeState> {
                             info!("Sending challenge bytes");
                             self.state.protocol.send_message(HandshakePacketHostToGuest::Challenge {
                                 encrypted_challenge,
-                                // nonce: self.state.nonce,
+                                nonce: self.state.nonce,
                             }).await?;
 
-                            if let HandshakePacketGuestToHost::Verify { challenge, /*nonce*/ } = self.state.protocol.read_frame().await? {
+                            if let HandshakePacketGuestToHost::Verify { challenge, nonce } = self.state.protocol.read_frame().await? {
                                 info!("Received challenge verification");
-                                // if nonce != self.state.nonce {
-                                //     error!("Challenge response had invalid nonce. Expected: {} Actual: {}. Rejecting...", self.state.nonce, nonce);
-                                //     return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()).await);
-                                // }
+                                if nonce != self.state.nonce {
+                                    error!("Challenge response had invalid nonce. Expected: {} Actual: {}. Rejecting...", self.state.nonce, nonce);
+                                    return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()).await);
+                                }
 
                                 if challenge == challenge_bytes {
                                     info!("Challenge verification successful");
