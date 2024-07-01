@@ -36,7 +36,7 @@ async fn main() -> io::Result<()> {
     let url = OSPUrl::from(reg_url);
 
     info!("Starting outbound thread");
-    let mut conn = OutboundConnection::create(url, key, args.hostname)?;
+    let mut conn = OutboundConnection::create(url, key, args.hostname).await?;
     let mut conn_in_handshake = conn.begin().await?;
     conn_in_handshake.handshake().await
 }

@@ -7,7 +7,7 @@ use log::{error, info};
 use openssl::pkey::Private;
 use openssl::rsa::{Padding, Rsa};
 
-use trust_dns_resolver::Resolver;
+use trust_dns_resolver::{Resolver, TokioAsyncResolver};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 
 use url::quirks::port;
@@ -30,11 +30,11 @@ pub struct HandshakeState {
 }
 
 impl OutboundConnection<WaitingState> {
-    pub fn create(url: OSPUrl, private_key: Rsa<Private>, hostname: String) -> io::Result<Self> {
+    pub async fn create(url: OSPUrl, private_key: Rsa<Private>, hostname: String) -> io::Result<Self> {
         info!("Resolving osp connection to {url}");
-        let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
+        let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
-        let ip_resp = resolver.ipv4_lookup(url.domain.clone())?;
+        let ip_resp = resolver.ipv4_lookup(url.domain.clone()).await?;
         if let Some(ip) = ip_resp.iter().next() {
             info!("Lookup successful, opening connection");
             Self::create_with_socket_addr(
