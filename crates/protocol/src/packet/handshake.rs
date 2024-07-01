@@ -23,7 +23,7 @@ pub enum HandshakePacketGuestToHost {
     /// Send the client-decrypted challenge bytes back to the server
     Verify {
         challenge: Vec<u8>,
-        nonce: Uuid,
+        // nonce: Uuid,
     },
 }
 
@@ -37,7 +37,7 @@ pub enum HandshakePacketHostToGuest {
     /// Send the challenge bytes to the client to decrypt
     Challenge {
         encrypted_challenge: Vec<u8>,
-        nonce: Uuid,
+        // nonce: Uuid,
     },
     Close {
         can_continue: bool,
