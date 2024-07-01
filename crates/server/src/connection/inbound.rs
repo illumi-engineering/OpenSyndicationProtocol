@@ -1,4 +1,4 @@
-use log::info;
+use log::{debug, error, info};
 
 use openssl::rand::rand_bytes;
 use openssl::rsa::{Padding, Rsa};
@@ -86,11 +86,16 @@ impl InboundConnection<HandshakeState> {
                     Ok(txt_resp) => {
                         if let Some(record) = txt_resp.iter().next() {
                             info!("Challenge record found");
+                            debug!("Challenge record: {record}");
                             let pub_key = Rsa::public_key_from_pem(record.to_string().as_bytes())?;
+
+                            info!("Generating and encrypting challenge bytes");
                             let mut challenge_bytes = [0; 256];
                             rand_bytes(&mut challenge_bytes).unwrap();
                             let mut encrypted_challenge = vec![0u8; pub_key.size() as usize];
                             pub_key.public_encrypt(&challenge_bytes, &mut encrypted_challenge, Padding::PKCS1)?;
+
+                            info!("Sending challenge bytes");
                             self.state.protocol.send_message(HandshakePacketHostToGuest::Challenge {
                                 encrypted_challenge,
                                 nonce: self.state.nonce,
@@ -99,6 +104,7 @@ impl InboundConnection<HandshakeState> {
                             if let HandshakePacketGuestToHost::Verify { challenge, nonce } = self.state.protocol.read_frame().await? {
                                 info!("Received challenge verification");
                                 if nonce != self.state.nonce {
+                                    error!("Challenge response had invalid nonce. Expected: {} Actual: {}. Rejecting...", self.state.nonce, nonce);
                                     return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()).await);
                                 }
 
@@ -110,6 +116,7 @@ impl InboundConnection<HandshakeState> {
                                     }).await?;
                                     Ok(())
                                 } else {
+                                    error!("Challenge failed as bytes did not match. Rejecting...");
                                     return Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Challenge failed".to_string()).await)
                                 }
                             } else {

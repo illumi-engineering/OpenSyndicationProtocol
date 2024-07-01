@@ -73,6 +73,20 @@ impl OutboundConnection<WaitingState> {
 }
 
 impl OutboundConnection<HandshakeState> {
+    async fn read_frame_and_handle_err(&mut self) -> io::Result<Option<HandshakePacketHostToGuest>> {
+        let packet = self.state.protocol.read_frame().await?;
+        match packet {
+            HandshakePacketHostToGuest::Close { can_continue: false, err } => {
+                error!("Connection cannot continue.");
+                if let Some(msg) = err {
+                    error!("Error message received: {msg}");
+                }
+                Ok(None)
+            },
+            packet => Ok(Some(packet))
+        }
+    }
+
     pub async fn handshake(&mut self) -> io::Result<()> {
         let addr = self.addr;
         info!("<{addr}> Starting outbound handshake");
@@ -80,20 +94,20 @@ impl OutboundConnection<HandshakeState> {
         let private_key = self.private_key.clone();
         self.state.protocol.send_message(HandshakePacketGuestToHost::Hello { connection_type: ConnectionType::Server }).await?;
 
-        if let HandshakePacketHostToGuest::Acknowledge {
+        if let Some(HandshakePacketHostToGuest::Acknowledge {
             ok,
             err
-        } = self.state.protocol.read_frame().await? {
+        }) = self.read_frame_and_handle_err().await? {
             if ok {
                 info!("Handshake acknowledged");
                 self.state.protocol.send_message(HandshakePacketGuestToHost::Identify {
                     hostname,
                 }).await?;
 
-                if let HandshakePacketHostToGuest::Challenge {
+                if let Some(HandshakePacketHostToGuest::Challenge {
                     nonce,
                     encrypted_challenge
-                } = self.state.protocol.read_frame().await? {
+                }) = self.read_frame_and_handle_err().await? {
                     info!("Challenge received, decrypting");
                     let mut decrypt_buf = vec![0u8; private_key.size() as usize];
                     private_key.private_decrypt(&*encrypted_challenge, &mut *decrypt_buf, Padding::PKCS1)?;
@@ -104,22 +118,11 @@ impl OutboundConnection<HandshakeState> {
                         challenge: decrypt_buf,
                     }).await?;
 
-                    if let HandshakePacketHostToGuest::Close {
-                        can_continue,
+                    if let Some(HandshakePacketHostToGuest::Close {
+                        can_continue: true,
                         err,
-                    } = self.state.protocol.read_frame().await? {
-                        if can_continue {
-                            info!("Handshake successful!")
-                        } else {
-                            match err {
-                                None => {
-                                    error!("Unknown handshake err");
-                                }
-                                Some(e) => {
-                                    error!("Handshake err: {}", e);
-                                }
-                            }
-                        }
+                    }) = self.read_frame_and_handle_err().await? {
+                        info!("Handshake successful!")
                     }
                 }
             } else {
