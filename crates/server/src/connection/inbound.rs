@@ -114,6 +114,7 @@ impl InboundConnection<HandshakeState> {
                                         can_continue: true,
                                         err: None,
                                     }).await?;
+                                    info!("Sent success packet.");
                                     Ok(())
                                 } else {
                                     error!("Challenge failed as bytes did not match. Rejecting...");
