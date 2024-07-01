@@ -105,7 +105,7 @@ impl OutboundConnection<HandshakeState> {
                 }).await?;
 
                 if let Some(HandshakePacketHostToGuest::Challenge {
-                    nonce,
+                    // nonce,
                     encrypted_challenge
                 }) = self.read_frame_and_handle_err().await? {
                     info!("Challenge received, decrypting");
@@ -114,7 +114,7 @@ impl OutboundConnection<HandshakeState> {
 
                     info!("Sending decrypted challenge");
                     self.state.protocol.send_message(HandshakePacketGuestToHost::Verify {
-                        nonce,
+                        // nonce,
                         challenge: decrypt_buf,
                     }).await?;
 

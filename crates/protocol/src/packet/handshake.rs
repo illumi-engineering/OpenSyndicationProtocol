@@ -23,7 +23,7 @@ pub enum HandshakePacketGuestToHost {
     /// Send the client-decrypted challenge bytes back to the server
     Verify {
         challenge: Vec<u8>,
-        nonce: Uuid,
+        // nonce: Uuid,
     },
 }
 
@@ -37,7 +37,7 @@ pub enum HandshakePacketHostToGuest {
     /// Send the challenge bytes to the client to decrypt
     Challenge {
         encrypted_challenge: Vec<u8>,
-        nonce: Uuid,
+        // nonce: Uuid,
     },
     Close {
         can_continue: bool,
@@ -78,12 +78,12 @@ impl SerializePacket for HandshakePacketGuestToHost {
             HandshakePacketGuestToHost::Identify { hostname } => {
                 bytes_written += self.write_string(buf, hostname);
             }
-            HandshakePacketGuestToHost::Verify { challenge, nonce } => {
+            HandshakePacketGuestToHost::Verify { challenge, /* nonce */ } => {
                 // since this is always 256 bytes we can leave the len header out
                 buf.put_slice(challenge);
                 bytes_written += challenge.len();
 
-                bytes_written += self.write_uuid(buf, nonce);
+                // bytes_written += self.write_uuid(buf, nonce);
             }
         }
         Ok(bytes_written)
@@ -101,13 +101,13 @@ impl SerializePacket for HandshakePacketHostToGuest {
 
                 bytes_written += self.write_optional_string(buf, err);
             }
-            HandshakePacketHostToGuest::Challenge { encrypted_challenge, nonce } => {
+            HandshakePacketHostToGuest::Challenge { encrypted_challenge, /* nonce */ } => {
                 buf.put_u16(encrypted_challenge.len() as u16);
                 bytes_written += 2;
                 buf.put_slice(encrypted_challenge);
                 bytes_written += encrypted_challenge.len();
 
-                bytes_written += self.write_uuid(buf, nonce);
+                // bytes_written += self.write_uuid(buf, nonce);
             }
             HandshakePacketHostToGuest::Close { can_continue: ok, err} => {
                 buf.put_u8(*ok as u8);
@@ -138,7 +138,7 @@ impl DeserializePacket for HandshakePacketGuestToHost {
                 buf.copy_to_slice(&mut challenge_bytes);
                 Ok(HandshakePacketGuestToHost::Verify {
                     challenge: challenge_bytes,
-                    nonce: Self::read_uuid(buf),
+                    // nonce: Self::read_uuid(buf),
                 })
             },
             _ => Err(io::Error::new(
@@ -165,7 +165,7 @@ impl DeserializePacket for HandshakePacketHostToGuest {
 
                 Ok(HandshakePacketHostToGuest::Challenge {
                     encrypted_challenge: challenge_encrypted,
-                    nonce: Self::read_uuid(buf),
+                    // nonce: Self::read_uuid(buf),
                 })
             },
             3 => Ok(HandshakePacketHostToGuest::Close {
