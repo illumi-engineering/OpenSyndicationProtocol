@@ -35,7 +35,7 @@ async fn main() -> io::Result<()> {
     let key = Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap();
 
     info!("Starting outbound thread");
-    let mut conn = OutboundConnection::create(OSPUrl::from(Url::from_str(args.url.as_str())?), key, args.hostname)?;
+    let mut conn = OutboundConnection::create(OSPUrl::from(Url::parse(args.url.as_str()).unwrap()), key, args.hostname)?;
     let mut conn_in_handshake = conn.begin().await?;
     conn_in_handshake.handshake().await
 }
