@@ -1,6 +1,4 @@
 use std::{fs};
-use std::str::FromStr;
-
 
 use clap::{Parser};
 use log::{info};
@@ -34,8 +32,11 @@ async fn main() -> io::Result<()> {
     let key_contents = fs::read_to_string(args.private_key.clone()).expect(format!("Unable to open private key file {}", args.private_key).as_str());
     let key = Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap();
 
+    let reg_url = Url::parse(args.url.as_str()).unwrap();
+    let url = OSPUrl::from(reg_url);
+
     info!("Starting outbound thread");
-    let mut conn = OutboundConnection::create(OSPUrl::from(Url::parse(args.url.as_str()).unwrap()), key, args.hostname)?;
+    let mut conn = OutboundConnection::create(url, key, args.hostname)?;
     let mut conn_in_handshake = conn.begin().await?;
     conn_in_handshake.handshake().await
 }
