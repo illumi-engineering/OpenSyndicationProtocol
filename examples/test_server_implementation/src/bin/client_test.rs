@@ -1,10 +1,13 @@
 use std::{fs};
+use std::str::FromStr;
 
 
 use clap::{Parser};
 use log::{info};
 use openssl::rsa::Rsa;
 use tokio::io;
+use url::Url;
+use osp_protocol::OSPUrl;
 use osp_server_sdk::connection::outbound::OutboundConnection;
 
 #[derive(Parser, Debug)]
@@ -12,7 +15,7 @@ use osp_server_sdk::connection::outbound::OutboundConnection;
 struct Args {
     /// IPv4 address to bind to
     #[arg()]
-    address: String,
+    url: String,
 
     /// RSA Private Key for decrypting DNS challenges
     #[arg(long)]
@@ -32,7 +35,7 @@ async fn main() -> io::Result<()> {
     let key = Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap();
 
     info!("Starting outbound thread");
-    let mut conn = OutboundConnection::create_with_socket_addr(args.address.parse().unwrap(), key, args.hostname)?;
+    let mut conn = OutboundConnection::create(OSPUrl::from(Url::from_str(args.url.as_str())), key, args.hostname)?;
     let mut conn_in_handshake = conn.begin().await?;
     conn_in_handshake.handshake().await
 }
