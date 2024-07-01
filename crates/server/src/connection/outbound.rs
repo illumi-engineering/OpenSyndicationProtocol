@@ -15,7 +15,6 @@ use url::quirks::port;
 use osp_protocol::{ConnectionType, OSPUrl, Protocol};
 use osp_protocol::packet::{DeserializePacket, SerializePacket};
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
-use crate::connection::ConnectionUtils;
 
 pub struct OutboundConnection<TState> {
     private_key: Rsa<Private>,
@@ -73,8 +72,6 @@ impl OutboundConnection<WaitingState> {
     }
 }
 
-impl ConnectionUtils<HandshakePacketHostToGuest, HandshakePacketGuestToHost> for OutboundConnection<HandshakeState> {}
-
 impl OutboundConnection<HandshakeState> {
     pub async fn handshake(&mut self) -> io::Result<()> {
         let addr = self.addr;
@@ -86,7 +83,7 @@ impl OutboundConnection<HandshakeState> {
         if let HandshakePacketHostToGuest::Acknowledge {
             ok,
             err
-        } = Self::await_frame_in(&self.state.protocol)? {
+        } = self.state.protocol.read_frame().await? {
             if ok {
                 info!("Handshake acknowledged");
                 self.state.protocol.send_message(HandshakePacketGuestToHost::Identify {
@@ -96,7 +93,7 @@ impl OutboundConnection<HandshakeState> {
                 if let HandshakePacketHostToGuest::Challenge {
                     nonce,
                     encrypted_challenge
-                } = Self::await_frame_in(&self.state.protocol)? {
+                } = self.state.protocol.read_frame().await? {
                     info!("Challenge received, decrypting");
                     let mut decrypt_buf = vec![0u8; private_key.size() as usize];
                     private_key.private_decrypt(&*encrypted_challenge, &mut *decrypt_buf, Padding::PKCS1)?;
@@ -110,7 +107,7 @@ impl OutboundConnection<HandshakeState> {
                     if let HandshakePacketHostToGuest::Close {
                         can_continue,
                         err,
-                    } = Self::await_frame_in(&self.state.protocol)? {
+                    } = self.state.protocol.read_frame().await? {
                         if can_continue {
                             info!("Handshake successful!")
                         } else {

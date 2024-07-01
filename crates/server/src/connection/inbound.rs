@@ -15,7 +15,6 @@ use osp_protocol::{ConnectionType, Protocol};
 use osp_protocol::packet::{PacketDecoder, PacketEncoder};
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
 use osp_protocol::packet::transfer::{TransferPacketGuestToHost, TransferPacketHostToGuest};
-use crate::connection::ConnectionUtils;
 
 pub struct InboundConnection<TState> {
     connection_type: ConnectionType,
@@ -48,8 +47,6 @@ impl From<InboundConnection<HandshakeState>> for InboundConnection<TransferState
     }
 }
 
-impl ConnectionUtils<HandshakePacketGuestToHost, HandshakePacketHostToGuest> for InboundConnection<HandshakeState> {}
-
 impl InboundConnection<HandshakeState> {
     pub fn with_stream(stream: TcpStream) -> io::Result<Self> {
         Ok(Self {
@@ -70,7 +67,7 @@ impl InboundConnection<HandshakeState> {
     }
 
     pub async fn begin(&mut self) -> io::Result<()> {
-        if let HandshakePacketGuestToHost::Hello { connection_type } = Self::await_frame_in(&self.state.protocol)? {
+        if let HandshakePacketGuestToHost::Hello { connection_type } = self.state.protocol.read_frame().await? {
             self.connection_type = connection_type;
 
             self.state.protocol.send_message(HandshakePacketHostToGuest::Acknowledge {
@@ -78,7 +75,7 @@ impl InboundConnection<HandshakeState> {
                 err: None
             }).await?;
 
-            if let HandshakePacketGuestToHost::Identify { hostname } = Self::await_frame_in(&self.state.protocol)? {
+            if let HandshakePacketGuestToHost::Identify { hostname } = self.state.protocol.read_frame().await? {
                 // todo: check whitelist/blacklist
                 info!("Looking up challenge record for {hostname}");
                 let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
@@ -97,7 +94,7 @@ impl InboundConnection<HandshakeState> {
                                 nonce: self.state.nonce,
                             }).await?;
 
-                            if let HandshakePacketGuestToHost::Verify { challenge, nonce } = Self::await_frame_in(&self.state.protocol)? {
+                            if let HandshakePacketGuestToHost::Verify { challenge, nonce } = self.state.protocol.read_frame().await? {
                                 info!("Received challenge verification");
                                 if nonce != self.state.nonce {
                                     return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()).await);

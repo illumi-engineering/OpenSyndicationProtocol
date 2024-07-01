@@ -6,7 +6,7 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 
 use tokio_stream::StreamExt;
 use tokio_util::codec::{FramedRead, FramedWrite};
-use futures_util::SinkExt;
+use futures_util::{SinkExt};
 
 use crate::packet::{DeserializePacket, PacketDecoder, PacketEncoder, SerializePacket};
 
@@ -56,7 +56,11 @@ impl<InPacketType: DeserializePacket, OutPacketType : SerializePacket> Protocol<
     }
 
     /// Read a message from the inner [FramedRead]
-    pub async fn read_frame(&mut self) -> io::Result<Option<InPacketType::Output>> {
-        Ok(self.read.next().await)
+    pub async fn read_frame(&mut self) -> io::Result<InPacketType::Output> {
+        loop {
+            if let Some(packet) = self.read.next().await {
+                return Ok(packet?);
+            }
+        }
     }
 }
