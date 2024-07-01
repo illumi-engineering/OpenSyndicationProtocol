@@ -6,7 +6,7 @@ use openssl::rsa::{Padding, Rsa};
 use tokio::io;
 use tokio::net::TcpStream;
 
-use trust_dns_resolver::Resolver;
+use trust_dns_resolver::{TokioAsyncResolver};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 
 use uuid::Uuid;
@@ -78,8 +78,10 @@ impl InboundConnection<HandshakeState> {
             if let HandshakePacketGuestToHost::Identify { hostname } = self.state.protocol.read_frame().await? {
                 // todo: check whitelist/blacklist
                 info!("Looking up challenge record for {hostname}");
-                let resolver = Resolver::new(ResolverConfig::default(), ResolverOpts::default()).unwrap();
-                let txt_resp = resolver.txt_lookup(format!("_osp.{}", hostname));
+                let resolver = TokioAsyncResolver::tokio(
+                    ResolverConfig::default(),
+                    ResolverOpts::default());
+                let txt_resp = resolver.txt_lookup(format!("_osp.{}", hostname)).await;
                 match txt_resp {
                     Ok(txt_resp) => {
                         if let Some(record) = txt_resp.iter().next() {
