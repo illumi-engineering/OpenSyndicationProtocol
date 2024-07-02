@@ -85,18 +85,13 @@ impl OSProtocolNode {
     fn start_connection(&self, stream: TcpStream) {
         tokio::spawn(async move {
             let mut connection_handshake = InboundConnection::with_stream(stream).unwrap();
-            match connection_handshake.begin().await {
-                Ok(_) => {
-                    let mut connection_transfer = InboundConnection::<TransferState>::from(connection_handshake);
-
-                }
-                _ => {}
-            }
+            connection_handshake.begin().await?;
+            let mut connection_transfer = InboundConnection::<TransferState>::from(connection_handshake);
         });
     }
 
-    pub async fn test_outbound(&self, url: OSPUrl) -> io::Result<()> {
-        info!("Testing outbound connection to {url}");
+    pub async fn create_outbound(&self, url: OSPUrl) -> io::Result<()> {
+        info!("Starting outbound connection to {url}");
         let mut conn = OutboundConnection::create(url, self.private_key.clone(), self.hostname.clone()).await?;
         let mut conn_in_handshake = conn.begin().await?;
         conn_in_handshake.handshake().await

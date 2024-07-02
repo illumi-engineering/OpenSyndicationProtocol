@@ -26,7 +26,10 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    colog::init();
+    let mut clog = colog::default_builder();
+    clog.filter(None, log::LevelFilter::Trace);
+    clog.init();
+
     let args = Args::parse();
 
     let key_contents = fs::read_to_string(args.private_key.clone()).expect(format!("Unable to open private key file {}", args.private_key).as_str());

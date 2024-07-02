@@ -29,7 +29,10 @@ struct Args {
 }
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    colog::init();
+    let mut clog = colog::default_builder();
+    clog.filter(None, log::LevelFilter::Trace);
+    clog.init();
+
     let args = Args::parse();
     let addr = SocketAddrV4::new(args.bind.parse().expect("Invalid bind address"), args.port);
     let node = OSProtocolNode::builder()

@@ -35,10 +35,10 @@ impl From<InboundConnection<HandshakeState>> for InboundConnection<TransferState
             connection_type: value.connection_type,
             state: TransferState {
                 protocol: value.state.protocol.map_codecs(
-                    |codec| {
+                    |_| {
                         PacketDecoder::new() // Transfer packet types implied!
                     },
-                    |codec| {
+                    |_| {
                         PacketEncoder::new()
                     }
                 ),
@@ -59,6 +59,7 @@ impl InboundConnection<HandshakeState> {
     }
 
     async fn send_close_err(&mut self, error_kind: io::ErrorKind, err: String) -> io::Error {
+        error!("Closing connection with error: {}", err.clone());
         self.state.protocol.send_message(HandshakePacketHostToGuest::Close {
             can_continue: false,
             err: Some(err.clone()),
@@ -86,7 +87,7 @@ impl InboundConnection<HandshakeState> {
                     Ok(txt_resp) => {
                         if let Some(record) = txt_resp.iter().next() {
                             info!("Challenge record found");
-                            info!("Challenge record: {record}");
+                            debug!("Challenge record: {record}");
                             let pub_key = Rsa::public_key_from_pem(record.to_string().as_bytes())?;
 
                             info!("Generating and encrypting challenge bytes");
@@ -114,7 +115,7 @@ impl InboundConnection<HandshakeState> {
                                         can_continue: true,
                                         err: None,
                                     }).await?;
-                                    info!("Sent success packet.");
+                                    debug!("Sent success packet.");
                                     Ok(())
                                 } else {
                                     error!("Challenge failed as bytes did not match. Rejecting...");

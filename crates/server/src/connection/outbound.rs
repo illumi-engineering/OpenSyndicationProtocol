@@ -7,13 +7,10 @@ use log::{error, info};
 use openssl::pkey::Private;
 use openssl::rsa::{Padding, Rsa};
 
-use trust_dns_resolver::{Resolver, TokioAsyncResolver};
+use trust_dns_resolver::{TokioAsyncResolver};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 
-use url::quirks::port;
-
 use osp_protocol::{ConnectionType, OSPUrl, Protocol};
-use osp_protocol::packet::{DeserializePacket, SerializePacket};
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
 
 pub struct OutboundConnection<TState> {
@@ -121,7 +118,7 @@ impl OutboundConnection<HandshakeState> {
 
                     if let Some(HandshakePacketHostToGuest::Close {
                         can_continue: true,
-                        err,
+                        err: _,
                     }) = self.read_frame_and_handle_err().await? {
                         info!("Handshake successful!")
                     }
