@@ -6,6 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/crates/protocol/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/crates/server/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/examples/test_server_implementation/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/crates/data/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
