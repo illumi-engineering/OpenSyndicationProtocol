@@ -1,5 +1,5 @@
 use bytes::{BufMut, BytesMut};
-use serde::{ser, Serialize};
+use serde::{ser, Serialize, Serializer};
 use crate::error::{Error, Result};
 use crate::Marker;
 
@@ -30,7 +30,7 @@ where
     Ok(&mut serializer.output)
 }
 
-impl<'a, TData> ser::Serializer for &'a mut DataSerializer<TData> where TData : Serialize {
+impl<'a, TData> Serializer for &'a mut DataSerializer<TData> where TData : Serialize {
     type Ok = ();
     type Error = Error;
     type SerializeSeq = Self;
@@ -282,10 +282,4 @@ impl<'a, TData : Serialize> ser::SerializeTupleStruct for &'a mut DataSerializer
         self.marker(Marker::TupleStructEnd)?;
         Ok(())
     }
-}
-
-
-
-trait SerializeData<TData> where TData: SerializeData<TData> {
-    fn serialize(serializer: DataSerializer<TData>) -> io::Result<usize>;
 }
