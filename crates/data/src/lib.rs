@@ -2,6 +2,7 @@ use uuid::Uuid;
 
 mod ser;
 mod error;
+mod de;
 
 pub struct DataType<T> {
     id: Uuid
@@ -24,6 +25,24 @@ pub enum Marker {
     TupleStructBegin,
     TupleStructBreak,
     TupleStructEnd,
+    StringBegin,
+    StringEnd,
+    BytesBegin,
+    BytesEnd,
+    NewTypeBegin,
+    NewTypeEnd,
+    TupleVariantBegin,
+    TupleVariantBreak,
+    TupleVariantEnd,
+    MapBegin,
+    MapBreak,
+    MapEnd,
+    StructVariantBegin,
+    StructVariantBreak,
+    StructVariantEnd,
+    UnitVariantBegin,
+    UnitVariantEnd,
+    UnitStruct,
 }
 
 impl From<Marker> for u8 {
@@ -44,6 +63,24 @@ impl From<Marker> for u8 {
             Marker::TupleStructBegin => 12,
             Marker::TupleStructBreak => 13,
             Marker::TupleStructEnd => 14,
+            Marker::StringBegin => 15,
+            Marker::StringEnd => 16,
+            Marker::BytesBegin => 17,
+            Marker::BytesEnd => 18,
+            Marker::NewTypeBegin => 19,
+            Marker::NewTypeEnd => 20,
+            Marker::TupleVariantBegin => 21,
+            Marker::TupleVariantBreak => 22,
+            Marker::TupleVariantEnd => 23,
+            Marker::MapBegin => 24,
+            Marker::MapBreak => 25,
+            Marker::MapEnd => 26,
+            Marker::StructVariantBegin => 27,
+            Marker::StructVariantBreak => 28,
+            Marker::StructVariantEnd => 29,
+            Marker::UnitVariantBegin => 30,
+            Marker::UnitVariantEnd=> 31,
+            Marker::UnitStruct=> 32,
         }
     }
 }
@@ -68,6 +105,24 @@ impl TryFrom<u8> for Marker {
             12 => Ok(Marker::TupleStructBegin),
             13 => Ok(Marker::TupleStructBreak),
             14 => Ok(Marker::TupleStructEnd),
+            15 => Ok(Marker::StringBegin),
+            16 => Ok(Marker::StringEnd),
+            17 => Ok(Marker::BytesBegin),
+            18 => Ok(Marker::BytesEnd),
+            19 => Ok(Marker::NewTypeBegin),
+            20 => Ok(Marker::NewTypeEnd),
+            21 => Ok(Marker::TupleVariantBegin),
+            22 => Ok(Marker::TupleVariantBreak),
+            23 => Ok(Marker::TupleVariantEnd),
+            24 => Ok(Marker::MapBegin),
+            25 => Ok(Marker::MapBreak),
+            26 => Ok(Marker::MapEnd),
+            27 => Ok(Marker::StructVariantBegin),
+            28 => Ok(Marker::StructVariantBreak),
+            29 => Ok(Marker::StructVariantEnd),
+            30 => Ok(Marker::UnitVariantBegin),
+            31 => Ok(Marker::UnitVariantEnd),
+            32 => Ok(Marker::UnitStruct),
             _ => Err(error::Error::Message("Unknown ".to_string()))
         }
     }

@@ -3,12 +3,12 @@ use serde::{ser, Serialize, Serializer};
 use crate::error::{Error, Result};
 use crate::Marker;
 
-pub struct DataSerializer<TData> where TData : Serialize {
+pub struct DataSerializer {
     pub(crate) output: BytesMut,
     pub(crate) bytes_written: usize,
 }
 
-impl<TData> DataSerializer<TData> {
+impl DataSerializer {
     pub fn new() -> Self {
         DataSerializer {
             output: BytesMut::new(),
@@ -25,21 +25,21 @@ pub fn to_bytes<'ser, T>(value: &T) -> Result<&'ser mut BytesMut>
 where
     T: Serialize,
 {
-    let mut serializer = DataSerializer::<T>::new();
+    let mut serializer = DataSerializer::new();
     value.serialize(&mut serializer)?;
     Ok(&mut serializer.output)
 }
 
-impl<'a, TData> Serializer for &'a mut DataSerializer<TData> where TData : Serialize {
+impl<'a> Serializer for &'a mut DataSerializer {
     type Ok = ();
     type Error = Error;
     type SerializeSeq = Self;
     type SerializeTuple = Self;
     type SerializeTupleStruct = Self;
-    type SerializeTupleVariant = ();
-    type SerializeMap = ();
-    type SerializeStruct = ();
-    type SerializeStructVariant = ();
+    type SerializeTupleVariant = Self;
+    type SerializeMap = Self;
+    type SerializeStruct = Self;
+    type SerializeStructVariant = Self;
 
     fn serialize_bool(self, value: bool) -> Result<()> {
         self.output.put_u8(value as u8)?;
@@ -126,18 +126,20 @@ impl<'a, TData> Serializer for &'a mut DataSerializer<TData> where TData : Seria
     }
 
     fn serialize_str(self, v: &str) -> Result<()> {
+        self.marker(Marker::StringBegin)?;
         let bytes = v.as_bytes();
         self.output.put_u16(bytes.len() as u16);
         self.output.put_slice(bytes);
         self.bytes_written += bytes.len();
-        Ok(())
+        self.marker(Marker::StringEnd)
     }
 
     fn serialize_bytes(self, v: &[u8]) -> Result<()> {
+        self.marker(Marker::StringBegin)?;
         self.output.put_u16(v.len() as u16);
         self.output.put_slice(v);
         self.bytes_written += v.len();
-        Ok(())
+        self.marker(Marker::BytesEnd)
     }
 
     fn serialize_none(self) -> Result<()> {
@@ -162,11 +164,13 @@ impl<'a, TData> Serializer for &'a mut DataSerializer<TData> where TData : Seria
     }
 
     fn serialize_unit_struct(self, name: &'static str) -> Result<()> {
-        self.serialize_unit()
+        self.marker(Marker::UnitStruct)
     }
 
     fn serialize_unit_variant(self, name: &'static str, variant_index: u32, variant: &'static str) -> Result<()> {
-        self.serialize_u32(variant_index)
+        self.marker(Marker::UnitVariantBegin)?;
+        variant_index.serialize(**self)?;
+        self.marker(Marker::UnitVariantEnd)
     }
 
     fn serialize_newtype_struct<T>(self, name: &'static str, value: &T) -> Result<()>
@@ -180,45 +184,58 @@ impl<'a, TData> Serializer for &'a mut DataSerializer<TData> where TData : Seria
     where
         T: ?Sized + Serialize
     {
-        todo!()
+        self.marker(Marker::NewTypeBegin)?;
+        variant_index.serialize(&mut *self)?;
+        value.serialize(&mut *self)?;
+        self.marker(Marker::NewTypeEnd)
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
-        if let Some(length) = len {
-            self.serialize_u64(length as u64)?;
-        }
-
         self.marker(Marker::SeqBegin)?;
+        len.serialize(**self)?;
         Ok(self)
     }
 
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
         self.marker(Marker::TupleBegin)?;
-        self.serialize_seq(Some(len))
+        len.serialize(**self)?;
+        Ok(self)
     }
 
     fn serialize_tuple_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeTupleStruct> {
-        self.serialize_seq(Some(len))
+        self.marker(Marker::TupleStructBegin)?;
+        len.serialize(**self)?;
+        Ok(self)
     }
 
     fn serialize_tuple_variant(self, name: &'static str, variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeTupleVariant> {
-        todo!()
+        self.marker(Marker::TupleVariantBegin)?;
+        variant_index.serialize(**self)?;
+        len.serialize(**self)?;
+        Ok(self)
     }
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap> {
-        todo!()
+        self.marker(Marker::MapBegin)?;
+        len.serialize(**self)?;
+        Ok(self)
     }
 
     fn serialize_struct(self, name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
-        todo!()
+        self.marker(Marker::StructBegin)?;
+        len.serialize(**self)?;
+        Ok(self)
     }
 
     fn serialize_struct_variant(self, name: &'static str, variant_index: u32, variant: &'static str, len: usize) -> Result<Self::SerializeStructVariant> {
-        todo!()
+        self.marker(Marker::StructVariantBegin)?;
+        variant_index.serialize(**self)?;
+        len.serialize(**self)?;
+        Ok(self)
     }
 }
 
-impl<'a, TData> ser::SerializeSeq for &'a mut DataSerializer<TData> {
+impl<'a> ser::SerializeSeq for &'a mut DataSerializer {
     type Ok = ();
     type Error = Error;
 
@@ -240,7 +257,7 @@ impl<'a, TData> ser::SerializeSeq for &'a mut DataSerializer<TData> {
     }
 }
 
-impl<'a, TData : Serialize> ser::SerializeTuple for &'a mut DataSerializer<TData> {
+impl<'a> ser::SerializeTuple for &'a mut DataSerializer {
     type Ok = ();
     type Error = Error;
 
@@ -257,12 +274,11 @@ impl<'a, TData : Serialize> ser::SerializeTuple for &'a mut DataSerializer<TData
     }
 
     fn end(self) -> Result<()> {
-        self.marker(Marker::TupleEnd)?;
-        Ok(())
+        self.marker(Marker::TupleEnd)
     }
 }
 
-impl<'a, TData : Serialize> ser::SerializeTupleStruct for &'a mut DataSerializer<TData> {
+impl<'a> ser::SerializeTupleStruct for &'a mut DataSerializer {
     type Ok = ();
     type Error = Error;
 
@@ -281,5 +297,112 @@ impl<'a, TData : Serialize> ser::SerializeTupleStruct for &'a mut DataSerializer
     fn end(self) -> Result<()> {
         self.marker(Marker::TupleStructEnd)?;
         Ok(())
+    }
+}
+
+impl<'a> ser::SerializeTupleVariant for &'a mut DataSerializer {
+    type Ok = ();
+    type Error = Error;
+
+    fn serialize_field<T>(&mut self, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        let last_marker = Marker::try_from(&self.output[(self.output.len()-1)..][0])?;
+
+        if last_marker != Marker::TupleVariantBegin {
+            self.marker(Marker::TupleStructBreak)?;
+        }
+        value.serialize(&mut **self)
+    }
+
+    fn end(self) -> Result<()> {
+        self.marker(Marker::TupleVariantEnd)
+    }
+}
+
+// Some `Serialize` types are not able to hold a key and value in memory at the
+// same time so `SerializeMap` implementations are required to support
+// `serialize_key` and `serialize_value` individually.
+//
+// There is a third optional method on the `SerializeMap` trait. The
+// `serialize_entry` method allows serializers to optimize for the case where
+// key and value are both available simultaneously. In JSON it doesn't make a
+// difference so the default behavior for `serialize_entry` is fine.
+impl<'a> ser::SerializeMap for &'a mut DataSerializer {
+    type Ok = ();
+    type Error = Error;
+
+    fn serialize_key<T>(&mut self, key: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        let last_marker = Marker::try_from(&self.output[(self.output.len()-1)..][0])?;
+
+        if last_marker != Marker::MapBegin {
+            self.marker(Marker::MapBreak)?;
+        }
+
+        key.serialize(&mut **self)
+    }
+
+    fn serialize_value<T>(&mut self, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        value.serialize(&mut **self)
+    }
+
+    fn end(self) -> Result<()> {
+        self.marker(Marker::MapEnd)
+    }
+}
+
+// Structs are like maps in which the keys are constrained to be compile-time
+// constant strings.
+impl<'a> ser::SerializeStruct for &'a mut DataSerializer {
+    type Ok = ();
+    type Error = Error;
+
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        let last_marker = Marker::try_from(&self.output[(self.output.len()-1)..][0])?;
+
+        if last_marker != Marker::StructBegin {
+            self.marker(Marker::StructBreak)?;
+        }
+
+        key.serialize(&mut **self)?;
+        value.serialize(&mut **self)
+    }
+
+    fn end(self) -> Result<()> {
+        self.marker(Marker::StructEnd)
+    }
+}
+
+// Similar to `SerializeTupleVariant`, here the `end` method is responsible for
+// closing both of the curly braces opened by `serialize_struct_variant`.
+impl<'a> ser::SerializeStructVariant for &'a mut DataSerializer {
+    type Ok = ();
+    type Error = Error;
+
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
+    where
+        T: ?Sized + Serialize,
+    {
+        let last_marker = Marker::try_from(&self.output[(self.output.len()-1)..][0])?;
+
+        if last_marker != Marker::StructVariantBegin {
+            self.marker(Marker::StructVariantBreak)?;
+        }
+        key.serialize(&mut **self)?;
+        value.serialize(&mut **self)
+    }
+
+    fn end(self) -> Result<()> {
+        self.marker(Marker::StructVariantEnd)
     }
 }
