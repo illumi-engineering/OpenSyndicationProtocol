@@ -1,6 +1,9 @@
 use std::{fs, net::{SocketAddr, IpAddr, Ipv4Addr}};
+use std::collections::{HashMap, HashSet};
+use std::future::Future;
+use std::sync::{Arc, Mutex};
 
-use log::info;
+use log::{error, info};
 
 use openssl::pkey::Private;
 use openssl::rsa::Rsa;
@@ -13,59 +16,69 @@ use osp_protocol::OSPUrl;
 use crate::connection::inbound::{InboundConnection, TransferState};
 use crate::connection::outbound::OutboundConnection;
 
-
-pub struct OSProtocolNodeBuilder {
-    bind_addr: SocketAddr,
-    hostname: String,
+pub struct InitState {
     private_key: Option<Rsa<Private>>,
 }
 
-impl OSProtocolNodeBuilder {
-    pub fn bind_to(mut self, addr: SocketAddr) -> Self {
-        self.bind_addr = addr;
-        self
-    }
-
-    pub fn hostname(mut self, hostname: String) -> Self {
-        self.hostname = hostname;
-        self
-    }
-
-    pub fn private_key_file(mut self, path: String) -> Self {
-        let key_contents = fs::read_to_string(path.clone()).expect(format!("Unable to open private key file {}", path).as_str());
-        self.private_key = Some(Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap());
-        self
-    }
-
-    pub fn build(self) -> OSProtocolNode {
-        OSProtocolNode {
-            bind_addr: self.bind_addr,
-            hostname: self.hostname,
-            private_key: self.private_key.unwrap(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct OSProtocolNode {
-    bind_addr: SocketAddr,
-    hostname: String,
+pub struct ConnectionState {
     private_key: Rsa<Private>,
 }
 
-impl OSProtocolNode {
-    pub fn builder() -> OSProtocolNodeBuilder {
-        OSProtocolNodeBuilder {
+#[derive(Clone)]
+pub struct OSProtocolNode<TState> {
+    bind_addr: SocketAddr,
+    hostname: String,
+    state: Arc<Mutex<TState>>,
+}
+
+impl OSProtocolNode<InitState> {
+    pub fn new() -> Self {
+        OSProtocolNode::<InitState> {
             bind_addr: SocketAddr::new(IpAddr::from(Ipv4Addr::LOCALHOST), 57401),
             hostname: "".to_string(),
-            private_key: None,
+            state: Arc::new(Mutex::new(InitState {
+                private_key: None,
+            })),
         }
     }
 
-    pub async fn listen(&self) -> io::Result<()> {
+    pub fn set_addr(&mut self, addr: SocketAddr) {
+        self.bind_addr = addr;
+    }
+
+    pub fn set_hostname(&mut self, hostname: String) {
+        self.hostname = hostname;
+    }
+
+    pub fn set_private_key_file(&mut self, path: String) {
+        let key_contents = fs::read_to_string(path.clone()).expect(format!("Unable to open private key file {}", path).as_str());
+        self.state.lock().unwrap().private_key = Some(Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap());
+    }
+
+    pub fn init(&mut self) -> OSProtocolNode<ConnectionState> {
+        let bind_addr = self.bind_addr.clone();
+        let hostname = self.hostname.clone();
+        let private_key = self.state.lock().unwrap().private_key.clone().unwrap();
+        OSProtocolNode::<ConnectionState> {
+            bind_addr,
+            hostname,
+            state: Arc::new(Mutex::new(ConnectionState {
+                private_key,
+            })),
+        }
+    }
+}
+
+impl OSProtocolNode<ConnectionState> {
+    pub async fn listen<'a, F, Fut>(&'a mut self, conn_handler: F) -> io::Result<()>
+    where
+        F: Fn(InboundConnection<TransferState>, &Arc<Mutex<ConnectionState>>) -> Fut + Send + Copy + 'static,
+        Fut: Future<Output = Result<(), ()>> + Send + 'static,
+    {
         let port = self.bind_addr.port();
         let listener = TcpListener::bind(self.bind_addr).await?;
         info!("Listening started on port {port}, ready to accept connections");
+
         loop {
             // The second item contains the IP and port of the new connection.
             let (stream, _) = listener.accept().await?;
@@ -78,21 +91,33 @@ impl OSProtocolNode {
                     .unwrap_or("unknown address".to_string())
             );
 
-            self.start_connection(stream);
-        }
-    }
+            let state_rc = self.state.clone();
+            tokio::spawn(async move {
+                let mut connection_handshake = InboundConnection::with_stream(stream).unwrap();
+                match connection_handshake.begin().await {
+                    Ok(_) => {
+                        let connection_transfer = InboundConnection::<TransferState>::from(connection_handshake);
 
-    fn start_connection(&self, stream: TcpStream) {
-        tokio::spawn(async move {
-            let mut connection_handshake = InboundConnection::with_stream(stream).unwrap();
-            connection_handshake.begin().await?;
-            let mut connection_transfer = InboundConnection::<TransferState>::from(connection_handshake);
-        });
+                        match conn_handler(connection_transfer, &state_rc).await {
+                            Ok(_) => {}
+                            Err(_) => {}
+                        }
+                    }
+                    Err(e) => {
+                        error!("Handshake failed: {e}");
+                    }
+                }
+            });
+        }
     }
 
     pub async fn create_outbound(&self, url: OSPUrl) -> io::Result<()> {
         info!("Starting outbound connection to {url}");
-        let mut conn = OutboundConnection::create(url, self.private_key.clone(), self.hostname.clone()).await?;
+        let mut conn = OutboundConnection::create(
+            url,
+            self.state.lock().unwrap().private_key.clone(),
+            self.hostname.clone()
+        ).await?;
         let mut conn_in_handshake = conn.begin().await?;
         conn_in_handshake.handshake().await
     }

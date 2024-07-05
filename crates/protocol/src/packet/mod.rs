@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 pub mod handshake;
 pub mod transfer;
+pub mod data;
 
 /// The maximum length a packet can be. Any data that needs to be sent and is
 /// longer than this maximum should be chunked into multiple packets.

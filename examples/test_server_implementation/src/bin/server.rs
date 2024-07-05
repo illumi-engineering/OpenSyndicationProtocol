@@ -35,13 +35,19 @@ async fn main() -> io::Result<()> {
 
     let args = Args::parse();
     let addr = SocketAddrV4::new(args.bind.parse().expect("Invalid bind address"), args.port);
-    let node = OSProtocolNode::builder()
-        .bind_to(SocketAddr::from(addr))
-        .private_key_file(args.private_key)
-        .hostname(args.hostname)
-        .build();
+    let mut node = OSProtocolNode::new();
+    node.set_addr(SocketAddr::from(addr));
+    node.set_private_key_file(args.private_key);
+    node.set_hostname(args.hostname);
 
-    node.listen().await
+
+    let mut connection_node = node.init();
+    connection_node.listen(|connection, state| async move {
+
+        Ok(())
+    }).await?;
+
+    Ok(())
 
     // for uri in args.push_to {
     //     let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
