@@ -98,7 +98,10 @@ impl OSProtocolNode<ConnectionState> {
                     Ok(_) => {
                         let connection_transfer = InboundConnection::<TransferState>::from(connection_handshake);
 
-                        let _ = conn_handler(connection_transfer, &state_rc).await?;
+                        match conn_handler(connection_transfer, &state_rc).await {
+                            Ok(_) => {}
+                            Err(_) => {}
+                        }
                     }
                     Err(e) => {
                         error!("Handshake failed: {e}");
