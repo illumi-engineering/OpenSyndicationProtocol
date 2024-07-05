@@ -1,13 +1,18 @@
 use bytes::BytesMut;
 use tokio::io;
+use uuid::Uuid;
 use crate::packet::{DeserializePacket, SerializePacket};
 
 pub enum TransferPacketGuestToHost {
-
+    AcknowledgeObject {
+        can_send: bool
+    }
 }
 
 pub enum TransferPacketHostToGuest {
-
+    IdentifyObject {
+        id: Uuid
+    }
 }
 
 impl SerializePacket for TransferPacketGuestToHost {
