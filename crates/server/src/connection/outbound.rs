@@ -1,6 +1,7 @@
 use tokio::io;
 
 use std::net::{IpAddr, SocketAddr};
+use std::sync::{Arc, Mutex};
 
 use log::{error, info};
 
@@ -9,6 +10,7 @@ use openssl::rsa::{Padding, Rsa};
 
 use trust_dns_resolver::{TokioAsyncResolver};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+use osp_data::registry::DataTypeRegistry;
 
 use osp_protocol::{ConnectionType, OSPUrl, Protocol};
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
@@ -16,6 +18,7 @@ use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacke
 pub struct OutboundConnection<TState> {
     private_key: Rsa<Private>,
     hostname: String,
+    data_marshallers: Arc<Mutex<DataTypeRegistry>>,
     addr: SocketAddr,
     state: TState
 }
@@ -27,7 +30,7 @@ pub struct HandshakeState {
 }
 
 impl OutboundConnection<WaitingState> {
-    pub async fn create(url: OSPUrl, private_key: Rsa<Private>, hostname: String) -> io::Result<Self> {
+    pub async fn create(url: OSPUrl, private_key: Rsa<Private>, hostname: String, data_marshallers: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
         info!("Resolving osp connection to {url}");
         let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
@@ -37,7 +40,8 @@ impl OutboundConnection<WaitingState> {
             Self::create_with_socket_addr(
                 SocketAddr::new(IpAddr::from(ip.0), url.port),
                 private_key,
-                hostname
+                hostname,
+                data_marshallers,
             )
         } else {
             error!("Lookup failed");
@@ -45,12 +49,13 @@ impl OutboundConnection<WaitingState> {
         }
     }
 
-    pub fn create_with_socket_addr(addr: SocketAddr, private_key: Rsa<Private>, hostname: String) -> io::Result<Self> {
+    pub fn create_with_socket_addr(addr: SocketAddr, private_key: Rsa<Private>, hostname: String, data_marshallers: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
         info!("Opening connection to {addr}");
 
         Ok(Self {
             private_key,
             hostname,
+            data_marshallers,
             addr,
             state: WaitingState {}
         })
@@ -61,6 +66,7 @@ impl OutboundConnection<WaitingState> {
         Ok(OutboundConnection {
             private_key: self.private_key.clone(),
             hostname: self.hostname.clone(),
+            data_marshallers: self.data_marshallers.clone(),
             addr: self.addr.clone(),
             state: HandshakeState {
                 protocol: Protocol::connect(self.addr).await?,

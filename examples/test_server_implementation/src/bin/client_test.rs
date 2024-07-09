@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::{Arc, Mutex};
 
 use clap::Parser;
 
@@ -9,6 +10,7 @@ use openssl::rsa::Rsa;
 use tokio::io;
 
 use url::Url;
+use osp_data::registry::DataTypeRegistry;
 
 use osp_protocol::OSPUrl;
 use osp_server_sdk::connection::outbound::OutboundConnection;
@@ -44,7 +46,12 @@ async fn main() -> io::Result<()> {
     let url = OSPUrl::from(reg_url);
 
     info!("Starting outbound thread");
-    let mut conn = OutboundConnection::create(url, key, args.hostname).await?;
+    let mut conn = OutboundConnection::create(
+        url,
+        key,
+        args.hostname,
+        Arc::new(Mutex::new(DataTypeRegistry::new())) // standalone for testing TODO REPLACE THIS WITH SOMETHING PROPER DAMMIT
+    ).await?;
     let mut conn_in_handshake = conn.begin().await?;
     conn_in_handshake.handshake().await
 }

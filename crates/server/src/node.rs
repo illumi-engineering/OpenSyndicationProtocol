@@ -134,7 +134,8 @@ impl OSProtocolNode<ConnectionState> {
         let mut conn = OutboundConnection::create(
             url,
             self.state.lock().unwrap().private_key.clone(),
-            self.hostname.clone()
+            self.hostname.clone(),
+            self.data_marshallers.clone(),
         ).await?;
         let mut conn_in_handshake = conn.begin().await?;
         conn_in_handshake.handshake().await

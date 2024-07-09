@@ -872,6 +872,7 @@ dependencies = [
  "colog",
  "log",
  "openssl",
+ "osp_data",
  "osp_protocol",
  "osp_server_sdk",
  "tokio",
