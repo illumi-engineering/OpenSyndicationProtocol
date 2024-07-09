@@ -9,12 +9,18 @@ use uuid::Uuid;
 use crate::{Data, DataMarshaller};
 
 #[derive(Clone)]
-pub struct DataTypeRegistry {
-    items: HashMap<TypeId, Box<dyn DataMarshaller<DataType=Box<dyn Data>>>>,
+pub struct DataTypeRegistry
+
+{
+    items: HashMap<TypeId, DataMarshaller<Box<dyn Data + 'static>>>,
     id_map: HashMap<Uuid, TypeId>,
 }
 
-impl DataTypeRegistry {
+impl<TData> DataTypeRegistry
+where
+    TData : Data + 'static + Clone,
+    Box<TData>: Data,
+{
     pub fn new() -> Self {
         Self {
             items: HashMap::new(),
@@ -22,65 +28,51 @@ impl DataTypeRegistry {
         }
     }
 
-    pub fn register<TData : Data + 'static, TMarshaller : DataMarshaller<DataType = Box<dyn Data + 'static>> + 'static>(&mut self, uuid: Uuid, data_type: TMarshaller) {
+    pub fn register<TData>(&mut self, marshaller: DataMarshaller<Box<TData>>)
+    {
         let type_id = TypeId::of::<TData>();
-        self.items.insert(type_id, Box::new(data_type));
-        self.id_map.insert(uuid, type_id);
+        self.items.insert(type_id, marshaller);
+        self.id_map.insert(TData::get_id_static(), type_id);
     }
 
-    pub fn get_codec_by_type_id<TData : Data + 'static, TMarshaller : DataMarshaller + Sized + 'static>(&self) -> Option<&TMarshaller> {
-        let marshaller = self.items.get(&TypeId::of::<TData>())?;
-        marshaller.as_any().downcast_ref::<TMarshaller>()
+    pub fn get_codec_by_type_id<TData>(&self) -> Option<&DataMarshaller<Box<TData>>>
+    where
+        TData : Data + 'static + Clone,
+    {
+        self.items.get(&TypeId::of::<TData>())
     }
 
-    pub fn get_codec_by_uuid<TData : Data + 'static, TMarshaller : DataMarshaller + Sized + 'static>(&self, uuid: &Uuid) -> Option<&TMarshaller> {
+    pub fn get_codec_by_uuid<TData>(&self, uuid: &Uuid) -> Option<&DataMarshaller<Box<TData>>>
+    where
+        TData : Data + 'static + Clone,
+    {
         let type_id = self.id_map.get(uuid)?;
-        let marshaller = self.items.get(type_id)?;
-        marshaller.as_any().downcast_ref::<TMarshaller>()
+        self.items.get(type_id)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    #![feature(unsize)]
     use std::str::FromStr;
     use bincode::{Decode, Encode};
     use uuid::Uuid;
-    use crate::{Data, DataMarshaller, registry::DataTypeRegistry};
+    use crate::{Data, DataMarshaller, impl_data, registry::DataTypeRegistry};
 
-    #[derive(Encode, Decode)]
+    #[derive(Encode, Decode, Clone)]
     struct MyData {
         test_int: u8,
     }
 
-    impl Data for MyData {}
+    impl_data!(MyData, "9eddbf56-8cba-4962-9769-dcc84f1eefae");
 
-    struct MyDataMarshaller {}
-
-    impl MyDataMarshaller {
-        pub fn new() -> Self {
-            Self {}
-        }
-    }
-
-    impl DataMarshaller for MyDataMarshaller {
-        type DataType = MyData;
-
-        fn get_id_static() -> Uuid
-        where
-            Self: Sized
-        {
-            Uuid::from_str("1e563afd-a570-47ac-bd8a-131f9d3cad79").unwrap()
-        }
-    }
-
+    #[test]
     fn test_registry() {
         let mut registry = DataTypeRegistry::new();
 
-        let marshaller = MyDataMarshaller::new();
+        registry.register::<MyData>(DataMarshaller::new());
 
-        registry.register::<MyData, MyDataMarshaller>(MyDataMarshaller::get_id_static(), marshaller);
-
-
+        let got = registry.get_codec_by_type_id::<MyData>();
+        assert!(got.is_some());
+        assert_eq!(got.unwrap().get_id(), MyData::get_id_static());
     }
 }

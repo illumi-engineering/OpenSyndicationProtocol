@@ -59,12 +59,11 @@ impl OSProtocolNode<InitState> {
         self.state.lock().unwrap().private_key = Some(Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap());
     }
 
-    pub fn register_data_marshaller<TData, TMarshaller>(&mut self, marshaller: TMarshaller)
+    pub fn register_data_marshaller<TData>(&mut self, marshaller: DataMarshaller<TData>)
     where
-        TData : Data + 'static,
-        TMarshaller : DataMarshaller<DataType=Box<dyn Data + 'static>>
+        TData : Data + 'static + Clone,
     {
-        self.data_marshallers.lock().unwrap().register::<TData, TMarshaller>(TMarshaller::get_id_static(), marshaller);
+        self.data_marshallers.lock().unwrap().register::<TData>(marshaller);
     }
 
     pub fn init(&mut self) -> OSProtocolNode<ConnectionState> {
