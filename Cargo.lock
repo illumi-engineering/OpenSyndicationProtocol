@@ -230,17 +230,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
-name = "derive-where"
-version = "1.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62d671cc41a825ebabc75757b62d3d168c577f9149b2d49ece1dad1f72119d25"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "downcast-rs"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -599,23 +588,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "osp_client_sdk"
-version = "0.0.1"
-dependencies = [
- "osp_protocol",
-]
-
-[[package]]
 name = "osp_data"
 version = "0.0.1"
 dependencies = [
  "bincode",
  "bytes",
- "derive-where",
  "downcast-rs",
- "serde",
- "tokio",
- "tokio-byteorder",
  "uuid",
 ]
 
@@ -640,6 +618,7 @@ version = "0.0.1"
 dependencies = [
  "log",
  "openssl",
+ "osp_data",
  "osp_protocol",
  "tokio",
  "trust-dns-resolver",

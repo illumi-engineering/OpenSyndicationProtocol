@@ -2,10 +2,14 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::marker::Unsize;
 use std::ops::Deref;
+
 use downcast_rs::Downcast;
+
 use uuid::Uuid;
+
 use crate::{Data, DataMarshaller};
 
+#[derive(Clone)]
 pub struct DataTypeRegistry {
     items: HashMap<TypeId, Box<dyn DataMarshaller<DataType=dyn Data>>>,
     id_map: HashMap<Uuid, TypeId>,

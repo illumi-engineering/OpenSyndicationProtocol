@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+
 use url::Url;
 
 #[derive(PartialEq, Debug)]

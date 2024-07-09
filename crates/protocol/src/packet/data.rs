@@ -1,4 +1,5 @@
 use bytes::{Buf, BufMut, BytesMut};
+
 use crate::packet::{DeserializePacket, SerializePacket};
 
 pub struct DataPacket {

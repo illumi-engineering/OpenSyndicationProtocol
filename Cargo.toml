@@ -7,8 +7,16 @@ members = [
 ]
 
 [workspace.dependencies]
+# Internal Crates
 osp_data = { version = "=0.0.1", path = "crates/data" }
 osp_protocol = { version = "=0.0.1", path = "crates/protocol" }
 osp_server_sdk = { version = "=0.0.1", path = "crates/server" }
 osp_client_sdk = { version = "=0.0.1", path = "crates/client" }
 
+# External Crates
+url = "2.5.2"
+log = "0.4.21"
+uuid = { version = "1.9.1", features = ["v4"] }
+bytes = { version = "1.6.0" }
+tokio = { version = "1", features = ["full"] }
+openssl = "0.10.64"
