@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use log::{debug, error, info};
 
 use openssl::rand::rand_bytes;
@@ -10,6 +11,7 @@ use trust_dns_resolver::{TokioAsyncResolver};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 
 use uuid::Uuid;
+use osp_data::registry::DataTypeRegistry;
 
 use osp_protocol::{ConnectionType, Protocol};
 use osp_protocol::packet::{PacketDecoder, PacketEncoder};
@@ -18,6 +20,7 @@ use osp_protocol::packet::transfer::{TransferPacketGuestToHost, TransferPacketHo
 
 pub struct InboundConnection<TState> {
     connection_type: ConnectionType,
+    data_marshallers: Arc<Mutex<DataTypeRegistry>>,
     state: TState
 }
 
@@ -29,28 +32,11 @@ pub struct TransferState {
     protocol: Protocol<TransferPacketGuestToHost, TransferPacketHostToGuest>
 }
 
-impl From<InboundConnection<HandshakeState>> for InboundConnection<TransferState> {
-    fn from(value: InboundConnection<HandshakeState>) -> Self {
-        InboundConnection {
-            connection_type: value.connection_type,
-            state: TransferState {
-                protocol: value.state.protocol.map_codecs(
-                    |_| {
-                        PacketDecoder::new() // Transfer packet types implied!
-                    },
-                    |_| {
-                        PacketEncoder::new()
-                    }
-                ),
-            },
-        }
-    }
-}
-
 impl InboundConnection<HandshakeState> {
-    pub fn with_stream(stream: TcpStream) -> io::Result<Self> {
+    pub fn with_stream(stream: TcpStream, data_marshallers: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
         Ok(Self {
             connection_type: ConnectionType::Unknown,
+            data_marshallers,
             state: HandshakeState {
                 nonce: Uuid::new_v4(),
                 protocol: Protocol::with_stream(stream)?,
@@ -150,6 +136,23 @@ impl InboundConnection<HandshakeState> {
             }
         } else {
             return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected hello packet".to_string()).await);
+        }
+    }
+
+    pub fn start_transfer(self) -> InboundConnection<TransferState> {
+        InboundConnection {
+            connection_type: self.connection_type.clone(),
+            data_marshallers: self.data_marshallers.clone(),
+            state: TransferState {
+                protocol: self.state.protocol.map_codecs(
+                    |_| {
+                        PacketDecoder::new() // Transfer packet types implied!
+                    },
+                    |_| {
+                        PacketEncoder::new()
+                    }
+                ),
+            },
         }
     }
 }

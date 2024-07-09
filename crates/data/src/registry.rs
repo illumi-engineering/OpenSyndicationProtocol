@@ -1,6 +1,5 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::marker::Unsize;
 use std::ops::Deref;
 
 use downcast_rs::Downcast;
@@ -11,7 +10,7 @@ use crate::{Data, DataMarshaller};
 
 #[derive(Clone)]
 pub struct DataTypeRegistry {
-    items: HashMap<TypeId, Box<dyn DataMarshaller<DataType=dyn Data>>>,
+    items: HashMap<TypeId, Box<dyn DataMarshaller<DataType=Box<dyn Data>>>>,
     id_map: HashMap<Uuid, TypeId>,
 }
 
@@ -23,7 +22,7 @@ impl DataTypeRegistry {
         }
     }
 
-    pub fn register<TData : Data + 'static, TMarshaller : DataMarshaller<DataType = (dyn Data + 'static)> + 'static>(&mut self, uuid: Uuid, data_type: TMarshaller) {
+    pub fn register<TData : Data + 'static, TMarshaller : DataMarshaller<DataType = Box<dyn Data + 'static>> + 'static>(&mut self, uuid: Uuid, data_type: TMarshaller) {
         let type_id = TypeId::of::<TData>();
         self.items.insert(type_id, Box::new(data_type));
         self.id_map.insert(uuid, type_id);
