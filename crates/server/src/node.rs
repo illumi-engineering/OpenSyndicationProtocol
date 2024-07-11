@@ -27,6 +27,7 @@ pub struct InitState {
     private_key: Option<Rsa<Private>>,
 }
 
+#[derive(Clone)]
 pub struct ConnectionState {
     private_key: Rsa<Private>,
     subscribed_hostnames: Vec<String>,
@@ -91,7 +92,7 @@ impl OSProtocolNode<InitState> {
 impl OSProtocolNode<ConnectionState> {
     pub async fn listen<'a, F, Fut>(&'a mut self, data_handler: F) -> io::Result<()>
     where
-        F: Fn(InboundConnection<InboundTransferState>, &Arc<Mutex<ConnectionState>>) -> Fut + Send + Copy + 'static,
+        F: Fn(InboundConnection<InboundTransferState>) -> Fut + Send + Copy + 'static,
         Fut: Future<Output = Result<(), ()>> + Send + 'static,
     {
         let port = self.bind_addr.port();
@@ -157,6 +158,20 @@ impl OSProtocolNode<ConnectionState> {
         }
     }
 
+    async fn create_outbound(&self, url: OSPUrl) -> io::Result<OutboundConnection<OutboundHandshakeState>>
+    {
+        info!("Starting outbound connection to {url}");
+        let mut conn = OutboundConnection::create(
+            url,
+            self.state.lock().unwrap().private_key.clone(),
+            self.hostname.clone(),
+            self.data_marshallers.clone(),
+        ).await?;
+        let mut conn_in_handshake = conn.begin().await?;
+        conn_in_handshake.handshake().await?;
+        Ok(conn_in_handshake)
+    }
+
     pub async fn broadcast_data<TData>(&self, obj: TData) -> io::Result<()>
     where
         TData : Data + 'static + Clone + Encode
@@ -170,17 +185,8 @@ impl OSProtocolNode<ConnectionState> {
         Ok(())
     }
 
-    async fn create_outbound(&self, url: OSPUrl) -> io::Result<OutboundConnection<OutboundHandshakeState>>
-    {
-        info!("Starting outbound connection to {url}");
-        let mut conn = OutboundConnection::create(
-            url,
-            self.state.lock().unwrap().private_key.clone(),
-            self.hostname.clone(),
-            self.data_marshallers.clone(),
-        ).await?;
-        let mut conn_in_handshake = conn.begin().await?;
-        conn_in_handshake.handshake().await?;
-        Ok(conn_in_handshake)
+    pub async fn subscribe_to(&self, url: OSPUrl) -> io::Result<()> {
+        let mut outbound = self.create_outbound(url).await?;
+        outbound.subscribe().await
     }
 }

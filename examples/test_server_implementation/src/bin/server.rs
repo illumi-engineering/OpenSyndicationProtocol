@@ -1,10 +1,15 @@
 use std::net::{SocketAddr, SocketAddrV4};
+use std::sync::{Arc, Mutex};
 
 use clap::Parser;
-
-use osp_server_sdk::OSProtocolNode;
+use log::info;
 
 use tokio::io;
+
+use url::Url;
+
+use osp_protocol::OSPUrl;
+use osp_server_sdk::OSProtocolNode;
 
 /// Test implementation of an Open Syndication Protocol server node
 #[derive(Parser, Debug)]
@@ -25,10 +30,10 @@ struct Args {
     /// Used to identify myself during the handshake
     #[arg(long)]
     hostname: String,
-    //
-    // /// Servers to open outbound connections to
-    // #[arg(long)]
-    // push_to: Vec<String>
+
+    /// Servers to subscribe to data updates from
+    #[arg(long)]
+    subscribe_to: Vec<String>
 }
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -43,33 +48,24 @@ async fn main() -> io::Result<()> {
     node.set_private_key_file(args.private_key);
     node.set_hostname(args.hostname);
 
+    let mut connection_node = Arc::new(Mutex::new(node.init()));
 
-    let mut connection_node = node.init();
-    connection_node.listen(|connection, state| async move {
+    tokio::spawn(async move {
+        let mut node = connection_node.lock().unwrap();
+        node.listen(|connection| async move {
 
-        Ok(())
-    }).await?;
+            Ok(())
+        }).await
+    });
+
+
+    for uri in args.subscribe_to {
+        let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
+        info!("Subscribing to server: {osp_url}");
+        tokio::spawn(async move {
+            connection_node.lock().unwrap().subscribe_to(osp_url).await
+        });
+    }
 
     Ok(())
-
-    // for uri in args.push_to {
-    //     let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
-    //     info!("url: {osp_url}");
-    //     let n = Arc::clone(&node);
-    //     GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
-    //     std::thread::spawn(move || {
-    //         // We need to catch panics to reliably signal exit of a thread
-    //         let result = panic::catch_unwind(move || {
-    //             info!("Starting outbound thread");
-    //             n.lock().unwrap().test_outbound(osp_url);
-    //         });
-    //         // process errors
-    //         match result {
-    //             _ => {}
-    //         }
-    //         // signal thread exit
-    //         GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
-    //     });
-    // }
-
 }
