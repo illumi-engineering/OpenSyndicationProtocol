@@ -206,7 +206,7 @@ impl OutboundConnection<TransferState> {
         TData : Data + Encode + 'static
     {
         let data_types = self.data_marshallers.lock().unwrap();
-        let marshaller = data_types.get_codec_by_type_id::<TData>();
+        let marshaller = data_types.get_marshaller_by_type_id::<TData>();
         match marshaller {
             None => Err(Error::new(io::ErrorKind::Unsupported, format!("No marshaller registered for type with id {}", TData::get_id_static()))),
             Some(marshaller) => {
