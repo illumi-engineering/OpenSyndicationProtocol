@@ -1,6 +1,5 @@
 pub mod registry;
 
-use std::marker::PhantomData;
 use bincode::{Decode, Encode};
 use bincode::error::{DecodeError, EncodeError};
 
@@ -12,51 +11,44 @@ use dyn_clone::{clone_trait_object, DynClone};
 
 use uuid::Uuid;
 
-pub trait Data : DynClone + Send {
+pub trait Data : Send {
     fn get_id_static() -> Uuid where Self : Sized;
 
     fn get_id(&self) -> Uuid where Self : Sized {
         Self::get_id_static()
     }
 }
-clone_trait_object!(Data);
 
 #[derive(Clone)]
-pub struct DataMarshaller<TData>
-where
-    TData : Data + 'static
-{
-    _t_data: PhantomData<TData>
+pub struct DataMarshaller {
+    id: Uuid,
 }
 
-impl<TData> DataMarshaller<TData>
-where
-    TData : Data + 'static
-{
-    fn new() -> Self {
-        DataMarshaller::<TData> {
-            _t_data: PhantomData,
+impl DataMarshaller {
+    fn new(id: Uuid) -> Self {
+        DataMarshaller {
+            id,
         }
     }
 
-    pub fn get_id(&self) -> Uuid where TData : Sized {
-        TData::get_id_static()
+    pub fn get_id(&self) -> Uuid {
+        self.id
     }
 
-    fn decode_from_bytes(buf: &Bytes) -> Result<(TData, usize), DecodeError>
+    pub fn decode_from_bytes<TData>(buf: &Bytes) -> Result<(TData, usize), DecodeError>
     where
         Self : Sized,
-        TData : Decode,
+        TData : Data + Decode,
     {
         let config = bincode::config::standard();
         let res = bincode::decode_from_slice(buf, config)?;
         Ok(res)
     }
 
-    fn encode_to_bytes(buf: &mut BytesMut, obj: TData) -> Result<usize, EncodeError>
+    pub fn encode_to_bytes<TData>(buf: &mut BytesMut, obj: TData) -> Result<usize, EncodeError>
     where
         Self : Sized,
-        TData : Encode,
+        TData : Data + Encode,
     {
         let config = bincode::config::standard();
         let len = bincode::encode_into_slice(obj, buf, config)?;

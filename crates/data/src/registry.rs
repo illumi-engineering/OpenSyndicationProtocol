@@ -12,15 +12,11 @@ use crate::{Data, DataMarshaller};
 pub struct DataTypeRegistry
 
 {
-    items: HashMap<TypeId, DataMarshaller<Box<dyn Data + 'static>>>,
+    items: HashMap<TypeId, DataMarshaller>,
     id_map: HashMap<Uuid, TypeId>,
 }
 
-impl<TData> DataTypeRegistry
-where
-    TData : Data + 'static + Clone,
-    Box<TData>: Data,
-{
+impl DataTypeRegistry {
     pub fn new() -> Self {
         Self {
             items: HashMap::new(),
@@ -28,23 +24,25 @@ where
         }
     }
 
-    pub fn register<TData>(&mut self, marshaller: DataMarshaller<Box<TData>>)
+    pub fn register<TData>(&mut self)
+    where
+        TData : Data + 'static
     {
         let type_id = TypeId::of::<TData>();
-        self.items.insert(type_id, marshaller);
+        self.items.insert(type_id, DataMarshaller::new(TData::get_id_static()));
         self.id_map.insert(TData::get_id_static(), type_id);
     }
 
-    pub fn get_codec_by_type_id<TData>(&self) -> Option<&DataMarshaller<Box<TData>>>
+    pub fn get_codec_by_type_id<TData>(&self) -> Option<&DataMarshaller>
     where
-        TData : Data + 'static + Clone,
+        TData : Data + 'static,
     {
         self.items.get(&TypeId::of::<TData>())
     }
 
-    pub fn get_codec_by_uuid<TData>(&self, uuid: &Uuid) -> Option<&DataMarshaller<Box<TData>>>
+    pub fn get_codec_by_uuid<TData>(&self, uuid: &Uuid) -> Option<&DataMarshaller>
     where
-        TData : Data + 'static + Clone,
+        TData : Data + 'static,
     {
         let type_id = self.id_map.get(uuid)?;
         self.items.get(type_id)
@@ -56,7 +54,7 @@ mod tests {
     use std::str::FromStr;
     use bincode::{Decode, Encode};
     use uuid::Uuid;
-    use crate::{Data, DataMarshaller, impl_data, registry::DataTypeRegistry};
+    use crate::{Data, impl_data, registry::DataTypeRegistry};
 
     #[derive(Encode, Decode, Clone)]
     struct MyData {
@@ -69,7 +67,7 @@ mod tests {
     fn test_registry() {
         let mut registry = DataTypeRegistry::new();
 
-        registry.register::<MyData>(DataMarshaller::new());
+        registry.register::<MyData>();
 
         let got = registry.get_codec_by_type_id::<MyData>();
         assert!(got.is_some());
