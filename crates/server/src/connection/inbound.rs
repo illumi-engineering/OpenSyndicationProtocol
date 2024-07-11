@@ -20,7 +20,8 @@ use osp_data::registry::DataTypeRegistry;
 use osp_protocol::{ConnectionType, Protocol};
 use osp_protocol::packet::{PACKET_MAX_LENGTH, PacketDecoder, PacketEncoder};
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
-use osp_protocol::packet::transfer::{TransferPacketGuestToHost, TransferPacketHostToGuest};
+use osp_protocol::packet::transfer::{TransferPacketHostToGuest, TransferPacketGuestToHost};
+use osp_protocol::utils::ConnectionIntent;
 
 pub struct InboundConnection<TState> {
     connection_type: ConnectionType,
@@ -50,16 +51,16 @@ impl InboundConnection<HandshakeState> {
         })
     }
 
-    async fn send_close_err(&mut self, error_kind: io::ErrorKind, err: String) -> io::Error {
+    async fn send_close_err(&mut self, error_kind: io::ErrorKind, err: String) -> Error {
         error!("Closing connection with error: {}", err.clone());
         self.state.protocol.send_message(HandshakePacketHostToGuest::Close {
             can_continue: false,
             err: Some(err.clone()),
         }).await.unwrap();
-        io::Error::new(error_kind, err)
+        Error::new(error_kind, err)
     }
 
-    pub async fn begin(&mut self) -> io::Result<()> {
+    pub async fn begin(&mut self) -> io::Result<(ConnectionIntent, String)> {
         if let HandshakePacketGuestToHost::Hello { connection_type } = self.state.protocol.read_frame().await? {
             self.connection_type = connection_type;
 
@@ -103,45 +104,70 @@ impl InboundConnection<HandshakeState> {
 
                                 if challenge == challenge_bytes {
                                     info!("Challenge verification successful");
-                                    self.state.protocol.send_message(HandshakePacketHostToGuest::Close {
-                                        can_continue: true,
-                                        err: None,
+                                    self.state.protocol.send_message(HandshakePacketHostToGuest::ChallengeResponse {
+                                        successful: true,
                                     }).await?;
                                     debug!("Sent success packet.");
-                                    Ok(())
+                                    if let HandshakePacketGuestToHost::SetIntent { intent } = self.state.protocol.read_frame().await? {
+                                        if intent == ConnectionIntent::Unknown {
+                                            warn!("Guest set unknown intent. Closing...");
+                                            return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Unknown intent".to_string()).await);
+                                        }
+
+                                        let can_continue = match intent {
+                                            ConnectionIntent::Subscribe => false,
+                                            ConnectionIntent::TransferData => true,
+                                            ConnectionIntent::Unknown => false,
+                                        };
+
+                                        info!("Guest set intent {intent}, can continue: {can_continue}.");
+                                        self.state.protocol.send_message(HandshakePacketHostToGuest::Close {
+                                            can_continue,
+                                            err: None,
+                                        }).await?;
+
+                                        Ok((intent, hostname))
+                                    } else {
+                                        warn!("Guest did not set intent. Closing...");
+                                        Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Intent must be set".to_string()).await)
+                                    }
                                 } else {
-                                    error!("Challenge failed as bytes did not match. Rejecting...");
-                                    return Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Challenge failed".to_string()).await)
+                                    warn!("Guest failed challenge, bytes did not match. Closing...");
+                                    Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Challenge failed".to_string()).await)
                                 }
                             } else {
-                                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected challenge verification packet".to_string()).await);
+                                warn!("Guest did not send challenge verification. Closing...");
+                                Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected challenge verification packet".to_string()).await)
                             }
                         } else {
-                            return Err(
+                            warn!("Failed to resolve SRV record for {hostname}. Closing...");
+                            Err(
                                 self.send_close_err(
                                     io::ErrorKind::InvalidData,
-                                    format!("Failed to resolve SRV record for {}. Is it located at _osp.{}?", hostname, hostname)
+                                    format!("Failed to resolve SRV record for {hostname}. Is it located at _osp.{hostname}?")
                                 ).await
-                            );
+                            )
                         }
                     }
                     Err(e) => {
-                        return Err(
+                        warn!("Failed to resolve SRV record for {hostname}. Closing...\n\nFurther Details: {}", e.to_string());
+                        Err(
                             self.send_close_err(
                                 io::ErrorKind::Other,
                                 format!(
-                                    "Failed to resolve SRV record for {}. Is it located at _osp.{}?\n\nFurther Details: {}",
-                                    hostname, hostname, e.to_string()
+                                    "Failed to resolve SRV record for {hostname}. Is it located at _osp.{hostname}?"
                                 )
                             ).await
-                        );
+                        )
                     }
                 }
             } else {
-                return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected identify packet".to_string()).await);
+                warn!("Guest did not identify. Closing...");
+                Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected identify packet".to_string()).await)
             }
         } else {
-            return Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected hello packet".to_string()).await);
+            warn!("No hello packet received from guest. Closing...");
+            Err(self.send_close_err(io::ErrorKind::InvalidInput, "Expected hello packet".to_string()).await)
         }
     }
 
@@ -164,53 +190,5 @@ impl InboundConnection<HandshakeState> {
 }
 
 impl InboundConnection<TransferState> {
-    pub async fn send_data<TData>(&mut self, obj: TData) -> io::Result<()>
-    where
-        TData : Data + Encode + 'static
-    {
-        let data_types = self.data_marshallers.lock().unwrap();
-        let marshaller = data_types.get_codec_by_type_id::<TData>();
-        match marshaller {
-            None => Err(Error::new(io::ErrorKind::Unsupported, format!("No marshaller registered for type with id {}", TData::get_id_static()))),
-            Some(marshaller) => {
-                let m = marshaller.clone(); // can't deref
 
-                let mut buf = BytesMut::new();
-                let data_len = m.encode_to_bytes(&mut buf, obj).unwrap();
-                let data_bytes = buf.to_vec();
-                let data_id = TData::get_id_static();
-
-                // the SendChunk packet needs two bytes for its own data (type, done) so the max
-                // chunk length we can achieve can be determined by PACKET_MAX_LENGTH - 2
-                let data_chunks = data_bytes.chunks(PACKET_MAX_LENGTH - 2);
-                let chunks_len = data_chunks.len();
-
-                self.state.protocol.send_message(TransferPacketHostToGuest::IdentifyObject {
-                    data_id,
-                    data_len,
-                    data_chunks: chunks_len,
-                }).await?;
-
-                if let TransferPacketGuestToHost::AcknowledgeObject { can_send } = self.state.protocol.read_frame().await? {
-                    if can_send {
-                        let mut i = 0;
-                        for chunk in data_chunks {
-                            let chunk_vec = Vec::from(chunk);
-
-                            self.state.protocol.send_message(TransferPacketHostToGuest::SendChunk {
-                                data: chunk_vec,
-                                done: i == chunks_len - 1,
-                            }).await?;
-
-                            i += 1
-                        }
-                    } else {
-                        warn!("Failed to send data to inbound client, client is not accepting data type {data_id}.");
-                    }
-                }
-
-                Ok(())
-            }
-        }
-    }
 }

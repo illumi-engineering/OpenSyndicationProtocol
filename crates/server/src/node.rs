@@ -1,23 +1,27 @@
 use std::{fs, net::{SocketAddr, IpAddr, Ipv4Addr}};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::io::{Error, ErrorKind};
 use std::sync::{Arc, Mutex};
 use bincode::Encode;
 
-use log::{error, info};
+use log::{error, info, warn};
 
 use openssl::pkey::Private;
 use openssl::rsa::Rsa;
 
 use tokio::io;
 use tokio::net::{TcpListener, TcpStream};
+use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
+use trust_dns_resolver::TokioAsyncResolver;
 use osp_data::{Data, DataMarshaller};
 
 use osp_data::registry::DataTypeRegistry;
 use osp_protocol::OSPUrl;
+use osp_protocol::utils::ConnectionIntent;
 
-use crate::connection::inbound::{InboundConnection, TransferState};
-use crate::connection::outbound::OutboundConnection;
+use crate::connection::inbound::{HandshakeState as InBoundHandshakeState, InboundConnection, TransferState as InboundTransferState};
+use crate::connection::outbound::{HandshakeState as OutboundHandshakeState, OutboundConnection, TransferState as OutboundTransferState};
 
 pub struct InitState {
     private_key: Option<Rsa<Private>>,
@@ -25,7 +29,7 @@ pub struct InitState {
 
 pub struct ConnectionState {
     private_key: Rsa<Private>,
-    inbound_conns_in_transfer: Vec<InboundConnection<TransferState>>,
+    subscribed_hostnames: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -78,16 +82,16 @@ impl OSProtocolNode<InitState> {
             data_marshallers: self.data_marshallers.clone(),
             state: Arc::new(Mutex::new(ConnectionState {
                 private_key,
-                inbound_conns_in_transfer: Vec::new(),
+                subscribed_hostnames: Vec::new(),
             })),
         }
     }
 }
 
 impl OSProtocolNode<ConnectionState> {
-    pub async fn listen<'a, F, Fut>(&'a mut self, conn_handler: F) -> io::Result<()>
+    pub async fn listen<'a, F, Fut>(&'a mut self, data_handler: F) -> io::Result<()>
     where
-        F: Fn(InboundConnection<TransferState>, &Arc<Mutex<ConnectionState>>) -> Fut + Send + Copy + 'static,
+        F: Fn(InboundConnection<InboundTransferState>, &Arc<Mutex<ConnectionState>>) -> Fut + Send + Copy + 'static,
         Fut: Future<Output = Result<(), ()>> + Send + 'static,
     {
         let port = self.bind_addr.port();
@@ -111,9 +115,18 @@ impl OSProtocolNode<ConnectionState> {
             tokio::spawn(async move {
                 let mut connection_handshake = InboundConnection::with_stream(stream, data_marshallers_rc).unwrap();
                 match connection_handshake.begin().await {
-                    Ok(_) => {
-                        let connection_transfer = connection_handshake.start_transfer();
-                        state_rc.lock().unwrap().inbound_conns_in_transfer.push(connection_transfer);
+                    Ok((intent, hostname)) => {
+                        match intent {
+                            ConnectionIntent::Subscribe => {
+                                state_rc.lock().unwrap().subscribed_hostnames.push(hostname);
+                            }
+                            ConnectionIntent::TransferData => {
+                                let connection_transfer = connection_handshake.start_transfer();
+                            }
+                            ConnectionIntent::Unknown => {
+                                warn!("Unknown connection intent. Closing...")
+                            }
+                        }
                         // match conn_handler(connection_transfer, &state_rc).await {
                         //     Ok(_) => {}
                         //     Err(_) => {}
@@ -127,21 +140,37 @@ impl OSProtocolNode<ConnectionState> {
         }
     }
 
+    async fn resolve_osp_url_from_srv(hostname: String) -> io::Result<OSPUrl> {
+        let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+
+        let srv_resp = resolver.srv_lookup(format!("_osp.{hostname}")).await?;
+        if let Some(srv) = srv_resp.iter().next() {
+            let port = srv.port();
+            let domain = srv.target().to_string();
+
+            Ok(OSPUrl {
+                domain,
+                port,
+            })
+        } else {
+            Err(Error::new(ErrorKind::HostUnreachable, format!("Unable to lookup srv record at _osp.{hostname}")))
+        }
+    }
+
     pub async fn broadcast_data<TData>(&self, obj: TData) -> io::Result<()>
     where
         TData : Data + 'static + Clone + Encode
     {
-        for mut conn in &mut self.state.lock().unwrap().inbound_conns_in_transfer {
-            conn.send_data::<TData>(obj.clone()).await?;
+        for hostname in &mut self.state.lock().unwrap().subscribed_hostnames {
+            let mut outbound = self.create_outbound(Self::resolve_osp_url_from_srv(hostname.clone()).await?).await?;
+            let mut outbound_transfer = outbound.start_transfer().await?;
+            outbound_transfer.send_data(obj.clone()).await?;
         }
 
         Ok(())
     }
 
-    pub async fn create_outbound<'a, F, Fut>(&self, url: OSPUrl, on_data_recv: F) -> io::Result<()>
-    where
-        F: Fn() -> Fut + Send + Copy + 'static,
-        Fut: Future<Output = Result<(), ()>> + Send + 'static,
+    async fn create_outbound(&self, url: OSPUrl) -> io::Result<OutboundConnection<OutboundHandshakeState>>
     {
         info!("Starting outbound connection to {url}");
         let mut conn = OutboundConnection::create(
@@ -151,6 +180,7 @@ impl OSProtocolNode<ConnectionState> {
             self.data_marshallers.clone(),
         ).await?;
         let mut conn_in_handshake = conn.begin().await?;
-        conn_in_handshake.handshake().await
+        conn_in_handshake.handshake().await?;
+        Ok(conn_in_handshake)
     }
 }

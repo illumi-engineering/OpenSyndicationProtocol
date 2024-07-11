@@ -9,26 +9,33 @@ use uuid::Uuid;
 
 use crate::ConnectionType;
 use crate::packet::{DeserializePacket, SerializePacket};
-
+use crate::utils::ConnectionIntent;
 
 pub enum HandshakePacketGuestToHost {
-    // in
+    /// Establish a connection with the other server
     Hello {
         connection_type: ConnectionType,
     },
+
     /// Send my hostname to the other server
     Identify {
         hostname: String,
     },
+
     /// Send the client-decrypted challenge bytes back to the server
     Verify {
         challenge: Vec<u8>,
         nonce: Uuid,
     },
+
+    /// Inform the other server of my intent.
+    SetIntent {
+        intent: ConnectionIntent,
+    }
 }
 
 pub enum HandshakePacketHostToGuest {
-    // out
+    /// Acknowledge the client connection
     Acknowledge {
         ok: bool,
         err: Option<String>,
@@ -39,6 +46,13 @@ pub enum HandshakePacketHostToGuest {
         encrypted_challenge: Vec<u8>,
         nonce: Uuid,
     },
+
+    /// Tell the client whether the challenge was successful
+    ChallengeResponse {
+        successful: bool,
+    },
+
+    /// Close the Handshake frame
     Close {
         can_continue: bool,
         err: Option<String>
@@ -51,6 +65,7 @@ impl From<&HandshakePacketGuestToHost> for u8 {
             HandshakePacketGuestToHost::Hello { .. } => 1,
             HandshakePacketGuestToHost::Identify { .. } => 2,
             HandshakePacketGuestToHost::Verify { .. } => 3,
+            HandshakePacketGuestToHost::SetIntent { .. } => 4,
         }
     }
 }
@@ -60,7 +75,8 @@ impl From<&HandshakePacketHostToGuest> for u8 {
         match pkt {
             HandshakePacketHostToGuest::Acknowledge { .. } => 1,
             HandshakePacketHostToGuest::Challenge { .. } => 2,
-            HandshakePacketHostToGuest::Close { .. } => 3
+            HandshakePacketHostToGuest::Close { .. } => 3,
+            HandshakePacketHostToGuest::ChallengeResponse { .. } => 4,
         }
     }
 }
@@ -72,7 +88,7 @@ impl SerializePacket for HandshakePacketGuestToHost {
         let mut bytes_written: usize = 1;
         match self {
             HandshakePacketGuestToHost::Hello { connection_type } => {
-                buf.put_u8(u8::from(connection_type));
+                buf.put_u8(connection_type.into());
                 bytes_written += 1
             }
             HandshakePacketGuestToHost::Identify { hostname } => {
@@ -84,6 +100,10 @@ impl SerializePacket for HandshakePacketGuestToHost {
                 // since this is always 256 bytes we can leave the len header out
                 buf.put_slice(challenge);
                 bytes_written += 256;
+            }
+            HandshakePacketGuestToHost::SetIntent { intent } => {
+                buf.put_u8(intent.into());
+                bytes_written += 1;
             }
         }
         Ok(bytes_written)
@@ -115,6 +135,10 @@ impl SerializePacket for HandshakePacketHostToGuest {
 
                 bytes_written += self.write_optional_string(buf, err);
             }
+            HandshakePacketHostToGuest::ChallengeResponse { successful } => {
+                buf.put_u8(*successful as u8);
+                bytes_written += 1;
+            }
         }
 
         Ok(bytes_written)
@@ -128,7 +152,7 @@ impl DeserializePacket for HandshakePacketGuestToHost {
         // We'll match the same `u8` that is used to recognize which request type this is
         match buf.get_u8() {
             1 => Ok(HandshakePacketGuestToHost::Hello {
-                connection_type: ConnectionType::from_u8(buf.get_u8()),
+                connection_type: ConnectionType::from(buf.get_u8()),
             }),
             2 => Ok(HandshakePacketGuestToHost::Identify {
                 hostname: Self::read_string(buf)?,
@@ -143,6 +167,9 @@ impl DeserializePacket for HandshakePacketGuestToHost {
                     nonce,
                 })
             },
+            4 => Ok(HandshakePacketGuestToHost::SetIntent {
+                intent: ConnectionIntent::from(buf.get_u8()),
+            }),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid Request Type",
@@ -174,6 +201,9 @@ impl DeserializePacket for HandshakePacketHostToGuest {
                 can_continue: buf.get_u8() != 0,
                 err: Self::read_optional_string(buf)?,
             }),
+            4 => Ok(HandshakePacketHostToGuest::ChallengeResponse {
+                successful: buf.get_u8() != 0,
+            }),
             _ => Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "Invalid Request Type",
@@ -184,7 +214,8 @@ impl DeserializePacket for HandshakePacketHostToGuest {
 
 #[cfg(test)]
 mod tests {
-    async fn serialize_handshake_packets() {
+    #[test]
+    async fn serialize_gth_hello() {
 
     }
 }
