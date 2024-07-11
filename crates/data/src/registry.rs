@@ -9,9 +9,7 @@ use uuid::Uuid;
 use crate::{Data, DataMarshaller};
 
 #[derive(Clone)]
-pub struct DataTypeRegistry
-
-{
+pub struct DataTypeRegistry {
     items: HashMap<TypeId, DataMarshaller>,
     id_map: HashMap<Uuid, TypeId>,
 }

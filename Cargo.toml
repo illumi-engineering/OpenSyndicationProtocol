@@ -19,4 +19,5 @@ log = "0.4.21"
 uuid = { version = "1.9.1", features = ["v4"] }
 bytes = { version = "1.6.0" }
 tokio = { version = "1", features = ["full"] }
+bincode = "2.0.0-rc.3"
 openssl = "0.10.64"

@@ -6,6 +6,6 @@ edition = "2021"
 [dependencies]
 uuid = { workspace = true }
 bytes = { workspace = true }
-bincode = "2.0.0-rc.3"
+bincode = { workspace = true }
 dyn-clone = "1.0.17"
 downcast-rs = "1.2.1"

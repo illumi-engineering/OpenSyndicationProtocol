@@ -2,6 +2,7 @@ use std::{fs, net::{SocketAddr, IpAddr, Ipv4Addr}};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use bincode::Encode;
 
 use log::{error, info};
 
@@ -24,6 +25,7 @@ pub struct InitState {
 
 pub struct ConnectionState {
     private_key: Rsa<Private>,
+    inbound_conns_in_transfer: Vec<InboundConnection<TransferState>>,
 }
 
 #[derive(Clone)]
@@ -76,6 +78,7 @@ impl OSProtocolNode<InitState> {
             data_marshallers: self.data_marshallers.clone(),
             state: Arc::new(Mutex::new(ConnectionState {
                 private_key,
+                inbound_conns_in_transfer: Vec::new(),
             })),
         }
     }
@@ -110,11 +113,11 @@ impl OSProtocolNode<ConnectionState> {
                 match connection_handshake.begin().await {
                     Ok(_) => {
                         let connection_transfer = connection_handshake.start_transfer();
-
-                        match conn_handler(connection_transfer, &state_rc).await {
-                            Ok(_) => {}
-                            Err(_) => {}
-                        }
+                        state_rc.lock().unwrap().inbound_conns_in_transfer.push(connection_transfer);
+                        // match conn_handler(connection_transfer, &state_rc).await {
+                        //     Ok(_) => {}
+                        //     Err(_) => {}
+                        // }
                     }
                     Err(e) => {
                         error!("Handshake failed: {e}");
@@ -122,6 +125,17 @@ impl OSProtocolNode<ConnectionState> {
                 }
             });
         }
+    }
+
+    pub async fn broadcast_data<TData>(&self, obj: TData) -> io::Result<()>
+    where
+        TData : Data + 'static + Clone + Encode
+    {
+        for mut conn in &mut self.state.lock().unwrap().inbound_conns_in_transfer {
+            conn.send_data::<TData>(obj.clone()).await?;
+        }
+
+        Ok(())
     }
 
     pub async fn create_outbound<'a, F, Fut>(&self, url: OSPUrl, on_data_recv: F) -> io::Result<()>

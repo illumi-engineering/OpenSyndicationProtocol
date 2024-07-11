@@ -623,6 +623,8 @@ dependencies = [
 name = "osp_server_sdk"
 version = "0.0.1"
 dependencies = [
+ "bincode",
+ "bytes",
  "log",
  "openssl",
  "osp_data",

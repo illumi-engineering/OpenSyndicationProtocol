@@ -13,7 +13,7 @@ pub mod data;
 
 /// The maximum length a packet can be. Any data that needs to be sent and is
 /// longer than this maximum should be chunked into multiple packets.
-const PACKET_MAX_LENGTH: usize = 8 * 1024 * 1024;
+pub const PACKET_MAX_LENGTH: usize = 8 * 1024 * 1024;
 
 /// This trait is used to serialize from a packet to a [BytesMut]
 pub trait SerializePacket {
@@ -110,7 +110,7 @@ pub struct PacketDecoder<PacketType: DeserializePacket> {
 impl<PacketType: DeserializePacket> PacketDecoder<PacketType> {
     pub fn new() -> PacketDecoder<PacketType> {
         PacketDecoder::<PacketType> {
-            _packet_type: PhantomData::default(),
+            _packet_type: PhantomData,
         }
     }
 }
@@ -169,7 +169,7 @@ pub struct PacketEncoder<PacketType : SerializePacket> {
 impl<PacketType: SerializePacket> PacketEncoder<PacketType> {
     pub fn new() -> Self {
         PacketEncoder::<PacketType> {
-            _packet_type: PhantomData::default(),
+            _packet_type: PhantomData,
         }
     }
 }
@@ -179,7 +179,7 @@ impl<PacketType: SerializePacket> Encoder<PacketType> for PacketEncoder<PacketTy
 
     fn encode(&mut self, item: PacketType, dst: &mut BytesMut) -> Result<(), Self::Error> {
         let mut buf = &mut BytesMut::with_capacity(PACKET_MAX_LENGTH);
-        item.serialize(& mut buf)?;
+        item.serialize(&mut buf)?;
 
         if buf.len() > PACKET_MAX_LENGTH {
             return Err(io::Error::new(

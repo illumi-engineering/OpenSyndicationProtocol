@@ -35,9 +35,8 @@ impl DataMarshaller {
         self.id
     }
 
-    pub fn decode_from_bytes<TData>(buf: &Bytes) -> Result<(TData, usize), DecodeError>
+    pub fn decode_from_bytes<TData>(self, buf: &Bytes) -> Result<(TData, usize), DecodeError>
     where
-        Self : Sized,
         TData : Data + Decode,
     {
         let config = bincode::config::standard();
@@ -45,9 +44,8 @@ impl DataMarshaller {
         Ok(res)
     }
 
-    pub fn encode_to_bytes<TData>(buf: &mut BytesMut, obj: TData) -> Result<usize, EncodeError>
+    pub fn encode_to_bytes<TData>(self, buf: &mut BytesMut, obj: TData) -> Result<usize, EncodeError>
     where
-        Self : Sized,
         TData : Data + Encode,
     {
         let config = bincode::config::standard();

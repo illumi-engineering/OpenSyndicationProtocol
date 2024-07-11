@@ -1,5 +1,7 @@
+use std::io::Error;
 use std::sync::{Arc, Mutex};
-use log::{debug, error, info};
+use bincode::Encode;
+use log::{debug, error, info, warn};
 
 use openssl::rand::rand_bytes;
 use openssl::rsa::{Padding, Rsa};
@@ -11,10 +13,12 @@ use trust_dns_resolver::{TokioAsyncResolver};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 
 use uuid::Uuid;
+use bytes::BytesMut;
+use osp_data::{Data, DataMarshaller};
 use osp_data::registry::DataTypeRegistry;
 
 use osp_protocol::{ConnectionType, Protocol};
-use osp_protocol::packet::{PacketDecoder, PacketEncoder};
+use osp_protocol::packet::{PACKET_MAX_LENGTH, PacketDecoder, PacketEncoder};
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
 use osp_protocol::packet::transfer::{TransferPacketGuestToHost, TransferPacketHostToGuest};
 
@@ -23,6 +27,8 @@ pub struct InboundConnection<TState> {
     data_marshallers: Arc<Mutex<DataTypeRegistry>>,
     state: TState
 }
+
+// Satoru Gojo is best boi
 
 pub struct HandshakeState {
     nonce: Uuid,
@@ -153,6 +159,58 @@ impl InboundConnection<HandshakeState> {
                     }
                 ),
             },
+        }
+    }
+}
+
+impl InboundConnection<TransferState> {
+    pub async fn send_data<TData>(&mut self, obj: TData) -> io::Result<()>
+    where
+        TData : Data + Encode + 'static
+    {
+        let data_types = self.data_marshallers.lock().unwrap();
+        let marshaller = data_types.get_codec_by_type_id::<TData>();
+        match marshaller {
+            None => Err(Error::new(io::ErrorKind::Unsupported, format!("No marshaller registered for type with id {}", TData::get_id_static()))),
+            Some(marshaller) => {
+                let m = marshaller.clone(); // can't deref
+
+                let mut buf = BytesMut::new();
+                let data_len = m.encode_to_bytes(&mut buf, obj).unwrap();
+                let data_bytes = buf.to_vec();
+                let data_id = TData::get_id_static();
+
+                // the SendChunk packet needs two bytes for its own data (type, done) so the max
+                // chunk length we can achieve can be determined by PACKET_MAX_LENGTH - 2
+                let data_chunks = data_bytes.chunks(PACKET_MAX_LENGTH - 2);
+                let chunks_len = data_chunks.len();
+
+                self.state.protocol.send_message(TransferPacketHostToGuest::IdentifyObject {
+                    data_id,
+                    data_len,
+                    data_chunks: chunks_len,
+                }).await?;
+
+                if let TransferPacketGuestToHost::AcknowledgeObject { can_send } = self.state.protocol.read_frame().await? {
+                    if can_send {
+                        let mut i = 0;
+                        for chunk in data_chunks {
+                            let chunk_vec = Vec::from(chunk);
+
+                            self.state.protocol.send_message(TransferPacketHostToGuest::SendChunk {
+                                data: chunk_vec,
+                                done: i == chunks_len - 1,
+                            }).await?;
+
+                            i += 1
+                        }
+                    } else {
+                        warn!("Failed to send data to inbound client, client is not accepting data type {data_id}.");
+                    }
+                }
+
+                Ok(())
+            }
         }
     }
 }
