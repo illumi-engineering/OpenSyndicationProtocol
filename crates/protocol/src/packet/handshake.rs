@@ -215,7 +215,7 @@ impl DeserializePacket for HandshakePacketHostToGuest {
 #[cfg(test)]
 mod tests {
     #[test]
-    async fn serialize_gth_hello() {
+    fn serialize_gth_hello() {
 
     }
 }
