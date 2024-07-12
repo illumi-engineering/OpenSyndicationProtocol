@@ -9,7 +9,6 @@ use bytes::{Bytes, BytesMut};
 
 use downcast_rs::{Downcast, DowncastSync, impl_downcast};
 
-
 use uuid::Uuid;
 
 /// Base type for all OSP data objects
@@ -17,7 +16,8 @@ use uuid::Uuid;
 /// ## Example implementation
 /// ```rust
 /// use bincode::{Decode, Encode};
-/// use osp_data::impl_data;
+/// use osp_data::{impl_data, Data};
+/// use uuid::Uuid;
 ///
 /// #[derive(Encode, Decode, Clone)]
 /// pub struct MyData {
@@ -35,7 +35,8 @@ pub trait Data : Send + Downcast {
 }
 impl_downcast!(Data);
 
-/// Implement data methods more easily
+/// Implement data methods more easily.
+/// [Uuid] and [Data] must both be in scope
 ///
 /// **Usage:** (Given some concrete type `YourType`) `impl_data!(YourType, "your-type-uuid");`
 #[macro_export]
