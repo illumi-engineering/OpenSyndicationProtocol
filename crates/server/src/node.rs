@@ -158,8 +158,7 @@ impl OSProtocolNode<ConnectionState> {
         }
     }
 
-    async fn create_outbound(&self, url: OSPUrl) -> io::Result<OutboundConnection<OutboundHandshakeState>>
-    {
+    async fn create_outbound(&self, url: OSPUrl) -> io::Result<OutboundConnection<OutboundHandshakeState>> {
         info!("Starting outbound connection to {url}");
         let mut conn = OutboundConnection::create(
             url,
@@ -185,7 +184,7 @@ impl OSProtocolNode<ConnectionState> {
         Ok(())
     }
 
-    pub async fn subscribe_to(&self, url: OSPUrl) -> io::Result<()> {
+    pub async fn subscribe_to(mut self, url: OSPUrl) -> io::Result<()> {
         let mut outbound = self.create_outbound(url).await?;
         outbound.subscribe().await
     }

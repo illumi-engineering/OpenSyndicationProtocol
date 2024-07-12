@@ -25,7 +25,7 @@ use osp_protocol::utils::ConnectionIntent;
 pub struct OutboundConnection<TState> {
     private_key: Rsa<Private>,
     hostname: String,
-    data_marshallers: Arc<Mutex<DataTypeRegistry>>,
+    data_types: Arc<Mutex<DataTypeRegistry>>,
     addr: SocketAddr,
     state: TState
 }
@@ -41,7 +41,7 @@ pub struct TransferState {
 }
 
 impl OutboundConnection<WaitingState> {
-    pub async fn create(url: OSPUrl, private_key: Rsa<Private>, hostname: String, data_marshallers: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
+    pub async fn create(url: OSPUrl, private_key: Rsa<Private>, hostname: String, data_types: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
         info!("Resolving osp connection to {url}");
         let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
 
@@ -52,7 +52,7 @@ impl OutboundConnection<WaitingState> {
                 SocketAddr::new(IpAddr::from(ip.0), url.port),
                 private_key,
                 hostname,
-                data_marshallers,
+                data_types,
             )
         } else {
             error!("Lookup failed");
@@ -60,13 +60,13 @@ impl OutboundConnection<WaitingState> {
         }
     }
 
-    pub fn create_with_socket_addr(addr: SocketAddr, private_key: Rsa<Private>, hostname: String, data_marshallers: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
+    pub fn create_with_socket_addr(addr: SocketAddr, private_key: Rsa<Private>, hostname: String, data_types: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
         info!("Opening connection to {addr}");
 
         Ok(Self {
             private_key,
             hostname,
-            data_marshallers,
+            data_types,
             addr,
             state: WaitingState {}
         })
@@ -77,7 +77,7 @@ impl OutboundConnection<WaitingState> {
         Ok(OutboundConnection {
             private_key: self.private_key.clone(),
             hostname: self.hostname.clone(),
-            data_marshallers: self.data_marshallers.clone(),
+            data_types: self.data_types.clone(),
             addr: self.addr.clone(),
             state: HandshakeState {
                 protocol: Protocol::connect(self.addr).await?,
@@ -178,7 +178,7 @@ impl OutboundConnection<HandshakeState> {
             err: None
         }) = self.read_frame_and_handle_err().await? {
             Ok(OutboundConnection {
-                data_marshallers: self.data_marshallers.clone(),
+                data_types: self.data_types.clone(),
                 addr: self.addr.clone(),
                 hostname: self.hostname.clone(),
                 private_key: self.private_key.clone(),
@@ -205,7 +205,7 @@ impl OutboundConnection<TransferState> {
     where
         TData : Data + Encode + 'static
     {
-        let data_types = self.data_marshallers.lock().unwrap();
+        let data_types = self.data_types.lock().unwrap();
         let marshaller = data_types.get_marshaller_by_type_id::<TData>();
         match marshaller {
             None => Err(Error::new(io::ErrorKind::Unsupported, format!("No marshaller registered for type with id {}", TData::get_id_static()))),

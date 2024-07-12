@@ -50,8 +50,9 @@ async fn main() -> io::Result<()> {
 
     let mut connection_node = Arc::new(Mutex::new(node.init()));
 
+    let node_rc_listen = connection_node.clone();
     tokio::spawn(async move {
-        let mut node = connection_node.lock().unwrap();
+        let mut node = node_rc_listen.lock().unwrap().to_owned();
         node.listen(|connection| async move {
 
             Ok(())
@@ -59,12 +60,12 @@ async fn main() -> io::Result<()> {
     });
 
 
+    let node_rc_subscribe = connection_node.clone();
     for uri in args.subscribe_to {
         let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
         info!("Subscribing to server: {osp_url}");
-        tokio::spawn(async move {
-            connection_node.lock().unwrap().subscribe_to(osp_url).await
-        });
+        let mut node = node_rc_subscribe.lock().unwrap().to_owned();
+        node.subscribe_to(osp_url).await?;
     }
 
     Ok(())

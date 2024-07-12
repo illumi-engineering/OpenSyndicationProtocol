@@ -25,7 +25,7 @@ use osp_protocol::utils::ConnectionIntent;
 
 pub struct InboundConnection<TState> {
     connection_type: ConnectionType,
-    data_marshallers: Arc<Mutex<DataTypeRegistry>>,
+    data_types: Arc<Mutex<DataTypeRegistry>>,
     state: TState
 }
 
@@ -40,10 +40,10 @@ pub struct TransferState {
 }
 
 impl InboundConnection<HandshakeState> {
-    pub fn with_stream(stream: TcpStream, data_marshallers: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
+    pub fn with_stream(stream: TcpStream, data_types: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
         Ok(Self {
             connection_type: ConnectionType::Unknown,
-            data_marshallers,
+            data_types,
             state: HandshakeState {
                 nonce: Uuid::new_v4(),
                 protocol: Protocol::with_stream(stream)?,
@@ -174,7 +174,7 @@ impl InboundConnection<HandshakeState> {
     pub fn start_transfer(self) -> InboundConnection<TransferState> {
         InboundConnection {
             connection_type: self.connection_type.clone(),
-            data_marshallers: self.data_marshallers.clone(),
+            data_types: self.data_types.clone(),
             state: TransferState {
                 protocol: self.state.protocol.map_codecs(
                     |_| {
