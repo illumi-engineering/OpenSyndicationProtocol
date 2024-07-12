@@ -56,7 +56,7 @@ impl OutboundConnection<WaitingState> {
             )
         } else {
             error!("Lookup failed");
-            Err(io::Error::new(io::ErrorKind::NotConnected, format!("Failed to resolve address {}", url.domain)))
+            Err(Error::new(io::ErrorKind::NotConnected, format!("Failed to resolve address {}", url.domain)))
         }
     }
 
@@ -206,7 +206,7 @@ impl OutboundConnection<TransferState> {
         TData : Data + Encode + 'static
     {
         let data_types = self.data_types.lock().unwrap();
-        let marshaller = data_types.get_marshaller_by_type_id::<TData>();
+        let marshaller = data_types.by_type_id::<TData>();
         match marshaller {
             None => Err(Error::new(io::ErrorKind::Unsupported, format!("No marshaller registered for type with id {}", TData::get_id_static()))),
             Some(marshaller) => {

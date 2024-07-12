@@ -14,7 +14,7 @@ use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 
 use uuid::Uuid;
 use bytes::BytesMut;
-use osp_data::{Data, DataMarshaller};
+use osp_data::{Data, DataType};
 use osp_data::registry::DataTypeRegistry;
 
 use osp_protocol::{ConnectionType, Protocol};

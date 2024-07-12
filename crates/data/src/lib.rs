@@ -7,9 +7,8 @@ use bincode::error::{DecodeError, EncodeError};
 
 use bytes::{Bytes, BytesMut};
 
-// use downcast_rs::{Downcast, impl_downcast};
+use downcast_rs::{Downcast, DowncastSync, impl_downcast};
 
-// use dyn_clone::{clone_trait_object, DynClone};
 
 use uuid::Uuid;
 
@@ -27,55 +26,14 @@ use uuid::Uuid;
 ///
 /// impl_data!(MyData, "995f6806-7c36-4e27-ab03-a422952287b6");
 /// ```
-pub trait Data : Send {
+pub trait Data : Send + Downcast {
     fn get_id_static() -> Uuid where Self : Sized;
 
     fn get_id(&self) -> Uuid where Self : Sized {
         Self::get_id_static()
     }
 }
-
-/// A marshaller type that contains encode/decode methods for writing [Data] to
-/// a buffer, and some associated values
-#[derive(Clone)]
-pub struct DataMarshaller {
-    /// The type [Uuid] of the type this marshaller is assigned to
-    id: Uuid,
-}
-
-impl DataMarshaller {
-    /// Create a new data marshaller with the type [Uuid] `id`
-    fn new(id: Uuid) -> Self {
-        DataMarshaller {
-            id,
-        }
-    }
-
-    /// Get the type [Uuid] of this marshaller
-    pub fn get_id(&self) -> Uuid {
-        self.id
-    }
-
-    /// Decode a [TData] off a buffer
-    pub fn decode_from_bytes<TData>(self, buf: &Bytes) -> Result<(TData, usize), DecodeError>
-    where
-        TData : Data + Decode,
-    {
-        let config = bincode::config::standard();
-        let res = bincode::decode_from_slice(buf, config)?;
-        Ok(res)
-    }
-
-    /// Encode a [TData] onto a buffer
-    pub fn encode_to_bytes<TData>(self, buf: &mut BytesMut, obj: TData) -> Result<usize, EncodeError>
-    where
-        TData : Data + Encode,
-    {
-        let config = bincode::config::standard();
-        let len = bincode::encode_into_slice(obj, buf, config)?;
-        Ok(len)
-    }
-}
+impl_downcast!(Data);
 
 /// Implement data methods more easily
 ///
@@ -93,3 +51,78 @@ macro_rules! impl_data {
         }
     };
 }
+
+/// A meta type that contains encode/decode methods for writing [Data] to
+/// a buffer, handlers assigned to [TData], and associated markers.
+pub struct DataType<TData>
+where
+    TData : Data + ?Sized,
+{
+    handlers: Vec<Box<dyn DataHandler<TData>>>
+}
+
+impl<TData> DataType<TData>
+where
+    TData : Data + ?Sized
+{
+    pub fn new() -> Self {
+        DataType::<TData> {
+            handlers: Vec::new()
+        }
+    }
+
+    pub fn get_id(&self) -> Uuid
+    where
+        TData : Sized
+    {
+        TData::get_id_static()
+    }
+
+    /// Decode a [TData] off a buffer
+    pub fn decode_from_bytes(&self, buf: &Bytes) -> Result<(TData, usize), DecodeError>
+    where
+        TData : Decode + Sized,
+    {
+        let config = bincode::config::standard();
+        let res = bincode::decode_from_slice(buf, config)?;
+        Ok(res)
+    }
+
+    /// Encode a [TData] onto a buffer
+    pub fn encode_to_bytes(&self, buf: &mut BytesMut, obj: TData) -> Result<usize, EncodeError>
+    where
+        TData : Encode + Sized,
+    {
+        let config = bincode::config::standard();
+        let len = bincode::encode_into_slice(obj, buf, config)?;
+        Ok(len)
+    }
+
+    pub fn handle(&self, obj: &TData)
+    where
+        TData : Sized,
+    {
+        for handler in &self.handlers {
+            handler.handle(obj)
+        }
+    }
+}
+
+pub trait DataHandler<TData> : DowncastSync + Send + Sync
+where
+    TData : Data + 'static
+{
+    fn handle(&self, obj: &TData);
+}
+
+impl_downcast!(sync DataHandler<TData> where TData : Data + 'static);
+
+impl<TData : Data, F: Fn(&TData) + Send + Sync + 'static> DataHandler<TData> for F {
+    fn handle(&self, obj: &TData) {
+        self(obj)
+    }
+}
+
+
+#[cfg(test)]
+mod tests {}

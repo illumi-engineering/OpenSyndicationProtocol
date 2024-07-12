@@ -14,7 +14,7 @@ use tokio::io;
 use tokio::net::{TcpListener, TcpStream};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 use trust_dns_resolver::TokioAsyncResolver;
-use osp_data::{Data, DataMarshaller};
+use osp_data::{Data, DataType};
 
 use osp_data::registry::DataTypeRegistry;
 use osp_protocol::OSPUrl;
@@ -37,7 +37,7 @@ pub struct ConnectionState {
 pub struct OSProtocolNode<TState> {
     bind_addr: SocketAddr,
     hostname: String,
-    data_marshallers: Arc<Mutex<DataTypeRegistry>>,
+    data_types: Arc<Mutex<DataTypeRegistry>>,
     state: Arc<Mutex<TState>>,
 }
 
@@ -46,7 +46,7 @@ impl OSProtocolNode<InitState> {
         OSProtocolNode::<InitState> {
             bind_addr: SocketAddr::new(IpAddr::from(Ipv4Addr::LOCALHOST), 57401),
             hostname: "".to_string(),
-            data_marshallers: Arc::new(Mutex::new(DataTypeRegistry::new())),
+            data_types: Arc::new(Mutex::new(DataTypeRegistry::new())),
             state: Arc::new(Mutex::new(InitState {
                 private_key: None,
             })),
@@ -70,7 +70,7 @@ impl OSProtocolNode<InitState> {
     where
         TData : Data + 'static,
     {
-        self.data_marshallers.lock().unwrap().register::<TData>();
+        self.data_types.lock().unwrap().register::<TData>();
     }
 
     pub fn init(&mut self) -> OSProtocolNode<ConnectionState> {
@@ -80,7 +80,7 @@ impl OSProtocolNode<InitState> {
         OSProtocolNode::<ConnectionState> {
             bind_addr,
             hostname,
-            data_marshallers: self.data_marshallers.clone(),
+            data_types: self.data_types.clone(),
             state: Arc::new(Mutex::new(ConnectionState {
                 private_key,
                 subscribed_hostnames: Vec::new(),
@@ -112,9 +112,9 @@ impl OSProtocolNode<ConnectionState> {
             );
 
             let state_rc = self.state.clone();
-            let data_marshallers_rc = self.data_marshallers.clone();
+            let data_types_rc = self.data_types.clone();
             tokio::spawn(async move {
-                let mut connection_handshake = InboundConnection::with_stream(stream, data_marshallers_rc).unwrap();
+                let mut connection_handshake = InboundConnection::with_stream(stream, data_types_rc).unwrap();
                 match connection_handshake.begin().await {
                     Ok((intent, hostname)) => {
                         match intent {
@@ -164,7 +164,7 @@ impl OSProtocolNode<ConnectionState> {
             url,
             self.state.lock().unwrap().private_key.clone(),
             self.hostname.clone(),
-            self.data_marshallers.clone(),
+            self.data_types.clone(),
         ).await?;
         let mut conn_in_handshake = conn.begin().await?;
         conn_in_handshake.handshake().await?;

@@ -4,6 +4,5 @@
 
 pub mod node;
 pub mod connection;
-mod util;
 
 pub use {node::OSProtocolNode};
