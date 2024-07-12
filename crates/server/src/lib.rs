@@ -1,6 +1,9 @@
 #![feature(io_error_more)]
+#![feature(thin_box)]
+#![feature(unsize)]
 
 pub mod node;
 pub mod connection;
+mod util;
 
 pub use {node::OSProtocolNode};

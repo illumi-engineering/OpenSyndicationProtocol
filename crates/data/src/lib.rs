@@ -1,3 +1,5 @@
+#![feature(thin_box)]
+
 pub mod registry;
 
 use bincode::{Decode, Encode};

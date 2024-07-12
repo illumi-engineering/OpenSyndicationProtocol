@@ -8,6 +8,7 @@
 ///   [Data::get_id_static])
 
 use std::any::{Any, TypeId};
+use std::boxed::ThinBox;
 use std::collections::HashMap;
 use std::ops::Deref;
 
@@ -21,6 +22,7 @@ use crate::{Data, DataMarshaller};
 /// associating their type [Uuid] with their [TypeId]
 #[derive(Clone)]
 pub struct DataTypeRegistry {
+    handlers: HashMap<TypeId, ThinBox<dyn Any>>,
     marshallers: HashMap<TypeId, DataMarshaller>,
     id_map: HashMap<Uuid, TypeId>,
 }
@@ -28,6 +30,7 @@ pub struct DataTypeRegistry {
 impl DataTypeRegistry {
     pub fn new() -> Self {
         Self {
+            handlers: HashMap::new(),
             marshallers: HashMap::new(),
             id_map: HashMap::new(),
         }
@@ -59,6 +62,11 @@ impl DataTypeRegistry {
     {
         let type_id = self.id_map.get(uuid)?;
         self.marshallers.get(type_id)
+    }
+
+    pub fn get_handler<T: ?Sized + 'static>(&self) -> Option<&T> {
+        let any = self.handlers.get(&TypeId::of::<T>());
+        any.map(|any| unsafe { std::mem::transmute::<_, &ThinBox<T>>(any) }.deref())
     }
 
     /// Check whether a data type is registered based on its [Uuid]
