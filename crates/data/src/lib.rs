@@ -18,6 +18,7 @@ use uuid::Uuid;
 /// use bincode::{Decode, Encode};
 /// use osp_data::{impl_data, Data};
 /// use uuid::Uuid;
+/// use std::str::FromStr;
 ///
 /// #[derive(Encode, Decode, Clone)]
 /// pub struct MyData {
@@ -36,7 +37,7 @@ pub trait Data : Send + Downcast {
 impl_downcast!(Data);
 
 /// Implement data methods more easily.
-/// [Uuid] and [Data] must both be in scope
+/// [Uuid], [std::str::FromStr] and [Data] must be in scope
 ///
 /// **Usage:** (Given some concrete type `YourType`) `impl_data!(YourType, "your-type-uuid");`
 #[macro_export]
