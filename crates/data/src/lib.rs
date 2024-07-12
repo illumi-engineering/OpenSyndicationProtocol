@@ -2,7 +2,9 @@
 
 pub mod registry;
 
+use std::ops::Deref;
 use bincode::{Decode, Encode};
+use bincode::config::Configuration;
 use bincode::error::{DecodeError, EncodeError};
 
 use bytes::{Bytes, BytesMut};
@@ -81,13 +83,13 @@ where
     }
 
     /// Decode a [TData] off a buffer
-    pub fn decode_from_bytes(&self, buf: &Bytes) -> Result<(TData, usize), DecodeError>
+    pub fn decode_from_bytes(&self, buf: &Bytes) -> Result<(Box<TData>, usize), DecodeError>
     where
-        TData : Decode + Sized,
+        TData : Decode,
     {
         let config = bincode::config::standard();
-        let res = bincode::decode_from_slice(buf, config)?;
-        Ok(res)
+        let res = bincode::decode_from_slice::<TData, Configuration>(buf, config)?;
+        Ok((Box::new(res.0), res.1))
     }
 
     /// Encode a [TData] onto a buffer
@@ -100,9 +102,7 @@ where
         Ok(len)
     }
 
-    pub fn handle(&self, obj: &TData)
-    where
-        TData : Sized,
+    pub fn handle(&self, obj: Box<&TData>)
     {
         for handler in &self.handlers {
             handler.handle(obj)
@@ -112,15 +112,15 @@ where
 
 pub trait DataHandler<TData> : DowncastSync + Send + Sync
 where
-    TData : Data + 'static
+    TData : Data + 'static + ?Sized
 {
-    fn handle(&self, obj: &TData);
+    fn handle(&self, obj: Box<&TData>);
 }
 
 impl_downcast!(sync DataHandler<TData> where TData : Data + 'static);
 
-impl<TData : Data, F: Fn(&TData) + Send + Sync + 'static> DataHandler<TData> for F {
-    fn handle(&self, obj: &TData) {
+impl<TData : Data + ?Sized, F: Fn(Box<&TData>) + Send + Sync + 'static> DataHandler<TData> for F {
+    fn handle(&self, obj: Box<&TData>) {
         self(obj)
     }
 }

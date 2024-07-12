@@ -51,12 +51,11 @@ impl DataTypeRegistry {
     }
 
     /// Get the marshaller for [TData] based on a type [Uuid]
-    pub fn by_uuid<TData>(&self, uuid: &Uuid) -> Option<&DataType<TData>>
+    pub fn by_uuid(&self, uuid: &Uuid) -> Option<&DataType<dyn Data>>
     where
-        TData : Data + 'static,
     {
         let type_id = self.id_map.get(uuid)?;
-        unsafe { std::mem::transmute(self.types.get(type_id)) }
+        self.types.get(type_id)
     }
 
     // pub fn get_handler<TData, THandler>(&self, uuid: &Uuid) -> Option<&THandler>
@@ -90,7 +89,7 @@ mod tests {
     impl_data!(MyData, "9eddbf56-8cba-4962-9769-dcc84f1eefae");
 
     #[test]
-    fn test_registry() {
+    fn test_registry_fetch_by_type() {
         let mut registry = DataTypeRegistry::new();
 
         registry.register::<MyData>();
@@ -98,5 +97,15 @@ mod tests {
         let got = registry.by_type_id::<MyData>();
         assert!(got.is_some());
         assert_eq!(got.unwrap().get_id(), MyData::get_id_static());
+    }
+
+    #[test]
+    fn test_registry_fetch_by_uuid() {
+        let mut registry = DataTypeRegistry::new();
+
+        registry.register::<MyData>();
+
+        let got = registry.by_uuid(&MyData::get_id_static());
+        assert!(got.is_some());
     }
 }
