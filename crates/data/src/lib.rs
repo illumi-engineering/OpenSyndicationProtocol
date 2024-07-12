@@ -105,7 +105,7 @@ where
     pub fn handle(&self, obj: Box<&TData>)
     {
         for handler in &self.handlers {
-            handler.handle(obj)
+            handler.handle(obj.clone())
         }
     }
 }
