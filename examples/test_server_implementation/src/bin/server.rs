@@ -1,15 +1,16 @@
 use std::net::{SocketAddr, SocketAddrV4};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use clap::Parser;
 use log::info;
 
 use tokio::io;
+use tokio::sync::Mutex;
 
 use url::Url;
 
 use osp_protocol::OSPUrl;
-use osp_server_sdk::OSProtocolNode;
+use osp_server_sdk::Node;
 
 /// Test implementation of an Open Syndication Protocol server node
 #[derive(Parser, Debug)]
@@ -43,29 +44,27 @@ async fn main() -> io::Result<()> {
 
     let args = Args::parse();
     let addr = SocketAddrV4::new(args.bind.parse().expect("Invalid bind address"), args.port);
-    let mut node = OSProtocolNode::new();
+    let mut node = Node::new();
     node.set_addr(SocketAddr::from(addr));
-    node.set_private_key_file(args.private_key);
+    node.set_private_key_file(args.private_key).await?;
     node.set_hostname(args.hostname);
 
-    let mut connection_node = Arc::new(Mutex::new(node.init()));
+
+    let connection_node = Arc::new(Mutex::new(node.init().await));
 
     let node_rc_listen = connection_node.clone();
     tokio::spawn(async move {
-        let mut node = node_rc_listen.lock().unwrap().to_owned();
-        node.listen(|connection| async move {
-
-            Ok(())
-        }).await
+        let node = node_rc_listen.lock().await;
+        node.listen().await
     });
 
 
-    let node_rc_subscribe = connection_node.clone();
     for uri in args.subscribe_to {
+        let node_rc_subscribe = connection_node.clone();
         let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
         info!("Subscribing to server: {osp_url}");
-        let mut node = node_rc_subscribe.lock().unwrap().to_owned();
-        node.subscribe_to(osp_url).await?;
+        let node = node_rc_subscribe.lock().await;
+        node.clone().subscribe_to(osp_url).await?;
     }
 
     Ok(())

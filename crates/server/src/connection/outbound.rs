@@ -1,8 +1,8 @@
-use std::io::Error;
 use tokio::io;
+use tokio::sync::{Mutex};
 
 use std::net::{IpAddr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
 use bincode::Encode;
 use bytes::BytesMut;
 
@@ -22,6 +22,8 @@ use osp_protocol::packet::{PACKET_MAX_LENGTH, PacketDecoder, PacketEncoder};
 use osp_protocol::packet::transfer::{TransferPacketHostToGuest, TransferPacketGuestToHost};
 use osp_protocol::utils::ConnectionIntent;
 
+/// Outbound connection
+#[allow(clippy::module_name_repetitions)]
 pub struct OutboundConnection<TState> {
     private_key: Rsa<Private>,
     hostname: String,
@@ -56,7 +58,7 @@ impl OutboundConnection<WaitingState> {
             )
         } else {
             error!("Lookup failed");
-            Err(Error::new(io::ErrorKind::NotConnected, format!("Failed to resolve address {}", url.domain)))
+            Err(io::Error::new(io::ErrorKind::NotConnected, format!("Failed to resolve address {}", url.domain)))
         }
     }
 
@@ -72,13 +74,13 @@ impl OutboundConnection<WaitingState> {
         })
     }
 
-    pub async fn begin(&mut self) -> io::Result<OutboundConnection<HandshakeState>> {
+    pub async fn begin(&self) -> io::Result<OutboundConnection<HandshakeState>> {
         info!("Starting outbound connection");
         Ok(OutboundConnection {
             private_key: self.private_key.clone(),
             hostname: self.hostname.clone(),
             data_types: self.data_types.clone(),
-            addr: self.addr.clone(),
+            addr: self.addr,
             state: HandshakeState {
                 protocol: Protocol::connect(self.addr).await?,
             },
@@ -123,7 +125,7 @@ impl OutboundConnection<HandshakeState> {
                     info!("Challenge received, decrypting");
                     info!("Connection Nonce: {nonce}");
                     let mut decrypt_buf = vec![0u8; private_key.size() as usize];
-                    private_key.private_decrypt(&*encrypted_challenge, &mut *decrypt_buf, Padding::PKCS1)?;
+                    private_key.private_decrypt(&encrypted_challenge, &mut decrypt_buf, Padding::PKCS1)?;
 
                     info!("Sending decrypted challenge");
                     self.state.protocol.send_message(HandshakePacketGuestToHost::Verify {
@@ -131,40 +133,40 @@ impl OutboundConnection<HandshakeState> {
                         challenge: decrypt_buf,
                     }).await?;
 
-                    if let Some(HandshakePacketHostToGuest::ChallengeResponse {
+                    if matches!(self.read_frame_and_handle_err().await?, Some(HandshakePacketHostToGuest::ChallengeResponse {
                         successful: true,
-                    }) = self.read_frame_and_handle_err().await? {
+                    })) {
                         info!("Handshake successful!");
 
                         Ok(())
                     } else {
-                        Err(Error::new(io::ErrorKind::Other, "Unknown error occurred receiving challenge response from host"))
+                        Err(io::Error::new(io::ErrorKind::Other, "Unknown error occurred receiving challenge response from host"))
                     }
                 } else {
-                    Err(Error::new(io::ErrorKind::Other, "Unknown error occurred receiving challenge from host"))
+                    Err(io::Error::new(io::ErrorKind::Other, "Unknown error occurred receiving challenge from host"))
                 }
             } else {
-                error!("Hello failed: {}", err.clone().unwrap());
-                Err(Error::new(io::ErrorKind::Other, err.unwrap()))
+                error!("Hello failed due to peer err: {}", err.clone().unwrap_or_else(|| "Unknown peer error".to_string()));
+                Err(io::Error::new(io::ErrorKind::Other, err.unwrap_or_else(|| "Unknown peer error".to_string())))
             }
         } else {
-            Err(Error::new(io::ErrorKind::Other, "Unknown error occurred receiving ACK from host"))
+            Err(io::Error::new(io::ErrorKind::Other, "Unknown error occurred receiving ACK from host"))
         }
     }
 
     pub async fn subscribe(&mut self) -> io::Result<()> {
         self.state.protocol.send_message(HandshakePacketGuestToHost::SetIntent {
-            intent: ConnectionIntent::TransferData
+            intent: ConnectionIntent::Subscribe
         }).await?;
 
-        if let Some(HandshakePacketHostToGuest::Close {
-            can_continue: true,
+        if matches!(self.read_frame_and_handle_err().await?, Some(HandshakePacketHostToGuest::Close {
+            can_continue: false,
             err: None
-        }) = self.read_frame_and_handle_err().await? {
+        })) {
             Ok(())
         } else {
             warn!("Subscribe failed.");
-            Err(Error::new(io::ErrorKind::Other, "Unknown error subscribing to host"))
+            Err(io::Error::new(io::ErrorKind::Other, "Unknown error subscribing to host"))
         }
     }
 
@@ -173,13 +175,13 @@ impl OutboundConnection<HandshakeState> {
             intent: ConnectionIntent::TransferData
         }).await?;
 
-        if let Some(HandshakePacketHostToGuest::Close {
+        if matches!(self.read_frame_and_handle_err().await?, Some(HandshakePacketHostToGuest::Close {
             can_continue: true,
             err: None
-        }) = self.read_frame_and_handle_err().await? {
+        })) {
             Ok(OutboundConnection {
                 data_types: self.data_types.clone(),
-                addr: self.addr.clone(),
+                addr: self.addr,
                 hostname: self.hostname.clone(),
                 private_key: self.private_key.clone(),
                 state: TransferState {
@@ -195,25 +197,29 @@ impl OutboundConnection<HandshakeState> {
             })
         } else {
             warn!("Failed to enter transfer state.");
-            Err(Error::new(io::ErrorKind::Other, "Unknown error switching to transfer state"))
+            Err(io::Error::new(io::ErrorKind::Other, "Unknown error switching to transfer state"))
         }
     }
 }
 
 impl OutboundConnection<TransferState> {
+    /// Send a data object to the host.
+    ///
+    /// 
     pub async fn send_data<TData>(&mut self, obj: TData) -> io::Result<()>
     where
         TData : Data + Encode + 'static
     {
-        let data_types = self.data_types.lock().unwrap();
+        let data_types = self.data_types.lock().await;
         let marshaller = data_types.by_type_id::<TData>();
         match marshaller {
-            None => Err(Error::new(io::ErrorKind::Unsupported, format!("No marshaller registered for type with id {}", TData::get_id_static()))),
+            None => Err(io::Error::new(io::ErrorKind::Unsupported, format!("No marshaller registered for type with id {}", TData::get_id_static()))),
             Some(marshaller) => {
-                let m = marshaller.clone(); // can't deref
+                let m = marshaller;
 
                 let mut buf = BytesMut::new();
-                let data_len = m.encode_to_bytes(&mut buf, obj).unwrap();
+                let data_len = m.encode_to_bytes(&mut buf, obj)
+                    .map_err(|e| { io::Error::new(io::ErrorKind::Other, e.to_string()) })?;
                 let data_bytes = buf.to_vec();
                 let data_id = TData::get_id_static();
 
@@ -228,18 +234,16 @@ impl OutboundConnection<TransferState> {
                     data_chunks: chunks_len,
                 }).await?;
 
+                #[allow(irrefutable_let_patterns)]
                 if let TransferPacketHostToGuest::AcknowledgeObject { can_send } = self.state.protocol.read_frame().await? {
                     if can_send {
-                        let mut i = 0;
-                        for chunk in data_chunks {
+                        for (i, chunk) in data_chunks.enumerate() {
                             let chunk_vec = Vec::from(chunk);
 
                             self.state.protocol.send_message(TransferPacketGuestToHost::SendChunk {
                                 data: chunk_vec,
                                 done: i == chunks_len - 1,
                             }).await?;
-
-                            i += 1
                         }
                     } else {
                         warn!("Failed to send data to inbound client, client is not accepting data type {data_id}.");

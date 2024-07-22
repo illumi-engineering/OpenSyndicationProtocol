@@ -1,6 +1,5 @@
 use std::io::Error;
-use std::sync::{Arc, Mutex};
-use bincode::Encode;
+use std::sync::Arc;
 use log::{debug, error, info, warn};
 
 use openssl::rand::rand_bytes;
@@ -8,21 +7,21 @@ use openssl::rsa::{Padding, Rsa};
 
 use tokio::io;
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 
 use trust_dns_resolver::{TokioAsyncResolver};
 use trust_dns_resolver::config::{ResolverConfig, ResolverOpts};
 
 use uuid::Uuid;
-use bytes::BytesMut;
-use osp_data::{Data, DataType};
 use osp_data::registry::DataTypeRegistry;
 
 use osp_protocol::{ConnectionType, Protocol};
-use osp_protocol::packet::{PACKET_MAX_LENGTH, PacketDecoder, PacketEncoder};
+use osp_protocol::packet::{PacketDecoder, PacketEncoder};
 use osp_protocol::packet::handshake::{HandshakePacketGuestToHost, HandshakePacketHostToGuest};
 use osp_protocol::packet::transfer::{TransferPacketHostToGuest, TransferPacketGuestToHost};
 use osp_protocol::utils::ConnectionIntent;
 
+#[allow(clippy::module_name_repetitions)]
 pub struct InboundConnection<TState> {
     connection_type: ConnectionType,
     data_types: Arc<Mutex<DataTypeRegistry>>,
@@ -40,15 +39,15 @@ pub struct TransferState {
 }
 
 impl InboundConnection<HandshakeState> {
-    pub fn with_stream(stream: TcpStream, data_types: Arc<Mutex<DataTypeRegistry>>) -> io::Result<Self> {
-        Ok(Self {
+    pub fn with_stream(stream: TcpStream, data_types: Arc<Mutex<DataTypeRegistry>>) -> Self {
+        Self {
             connection_type: ConnectionType::Unknown,
             data_types,
             state: HandshakeState {
                 nonce: Uuid::new_v4(),
-                protocol: Protocol::with_stream(stream)?,
+                protocol: Protocol::with_stream(stream),
             }
-        })
+        }
     }
 
     async fn send_close_err(&mut self, error_kind: io::ErrorKind, err: String) -> Error {
@@ -56,10 +55,26 @@ impl InboundConnection<HandshakeState> {
         self.state.protocol.send_message(HandshakePacketHostToGuest::Close {
             can_continue: false,
             err: Some(err.clone()),
-        }).await.unwrap();
+        }).await.expect("Failed to send error to guest.");
         Error::new(error_kind, err)
     }
 
+
+    /// Begin handling an inbound connection
+    /// 
+    /// # Errors
+    /// Returns [`io::ErrorKind::InvalidData`] if:
+    /// - Guest hostname does not have a valid TXT record associated for challenge
+    /// 
+    /// Returns [`io::ErrorKind::InvalidInput`] if:
+    /// - Guest does not send packets in their expected order
+    /// - Guest sets their intent to [`ConnectionIntent::Unknown`]
+    /// 
+    /// Returns [`io::ErrorKind::PermissionDenied`] if:
+    /// - Guest fails the challenge
+    /// - Guest sends invalid nonce
+    /// 
+    /// Delegates errors from [`Protocol::read_frame`] and [`Protocol::send_message`]
     pub async fn begin(&mut self) -> io::Result<(ConnectionIntent, String)> {
         if let HandshakePacketGuestToHost::Hello { connection_type } = self.state.protocol.read_frame().await? {
             self.connection_type = connection_type;
@@ -75,7 +90,7 @@ impl InboundConnection<HandshakeState> {
                 let resolver = TokioAsyncResolver::tokio(
                     ResolverConfig::default(),
                     ResolverOpts::default());
-                let txt_resp = resolver.txt_lookup(format!("_osp.{}", hostname)).await;
+                let txt_resp = resolver.txt_lookup(format!("_osp.{hostname}")).await;
                 match txt_resp {
                     Ok(txt_resp) => {
                         if let Some(record) = txt_resp.iter().next() {
@@ -85,7 +100,7 @@ impl InboundConnection<HandshakeState> {
 
                             info!("Generating and encrypting challenge bytes");
                             let mut challenge_bytes = [0; 256];
-                            rand_bytes(&mut challenge_bytes).unwrap();
+                            rand_bytes(&mut challenge_bytes)?;
                             let mut encrypted_challenge = vec![0u8; pub_key.size() as usize];
                             pub_key.public_encrypt(&challenge_bytes, &mut encrypted_challenge, Padding::PKCS1)?;
 
@@ -99,7 +114,7 @@ impl InboundConnection<HandshakeState> {
                                 info!("Received challenge verification");
                                 if nonce != self.state.nonce {
                                     error!("Challenge response had invalid nonce. Expected: {} Actual: {}. Rejecting...", self.state.nonce, nonce);
-                                    return Err(self.send_close_err(io::ErrorKind::InvalidData, "Invalid nonce".to_string()).await);
+                                    return Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Invalid nonce".to_string()).await);
                                 }
 
                                 if challenge == challenge_bytes {
@@ -115,9 +130,8 @@ impl InboundConnection<HandshakeState> {
                                         }
 
                                         let can_continue = match intent {
-                                            ConnectionIntent::Subscribe => false,
+                                            ConnectionIntent::Subscribe | ConnectionIntent::Unknown => false,
                                             ConnectionIntent::TransferData => true,
-                                            ConnectionIntent::Unknown => false,
                                         };
 
                                         info!("Guest set intent {intent}, can continue: {can_continue}.");
@@ -129,7 +143,7 @@ impl InboundConnection<HandshakeState> {
                                         Ok((intent, hostname))
                                     } else {
                                         warn!("Guest did not set intent. Closing...");
-                                        Err(self.send_close_err(io::ErrorKind::PermissionDenied, "Intent must be set".to_string()).await)
+                                        Err(self.send_close_err(io::ErrorKind::InvalidInput, "Intent must be set".to_string()).await)
                                     }
                                 } else {
                                     warn!("Guest failed challenge, bytes did not match. Closing...");
@@ -144,18 +158,18 @@ impl InboundConnection<HandshakeState> {
                             Err(
                                 self.send_close_err(
                                     io::ErrorKind::InvalidData,
-                                    format!("Failed to resolve SRV record for {hostname}. Is it located at _osp.{hostname}?")
+                                    format!("Failed to resolve TXT record for {hostname}. Is it located at _osp.{hostname}?")
                                 ).await
                             )
                         }
                     }
                     Err(e) => {
-                        warn!("Failed to resolve SRV record for {hostname}. Closing...\n\nFurther Details: {}", e.to_string());
+                        warn!("Failed to resolve TXT record for {hostname}. Closing...\n\nFurther Details: {}", e.to_string());
                         Err(
                             self.send_close_err(
-                                io::ErrorKind::Other,
+                                io::ErrorKind::InvalidData,
                                 format!(
-                                    "Failed to resolve SRV record for {hostname}. Is it located at _osp.{hostname}?"
+                                    "Failed to resolve TXT record for {hostname}. Is it located at _osp.{hostname}?"
                                 )
                             ).await
                         )
@@ -171,7 +185,8 @@ impl InboundConnection<HandshakeState> {
         }
     }
 
-    pub fn start_transfer(self) -> InboundConnection<TransferState> {
+    /// Switch connection into data transfer state 
+    #[must_use] pub fn start_transfer(self) -> InboundConnection<TransferState> {
         InboundConnection {
             connection_type: self.connection_type.clone(),
             data_types: self.data_types.clone(),
@@ -190,7 +205,7 @@ impl InboundConnection<HandshakeState> {
 }
 
 impl InboundConnection<TransferState> {
-    pub async fn start_recv() {
-
+    pub fn start_recv() {
+        todo!()
     }
 }

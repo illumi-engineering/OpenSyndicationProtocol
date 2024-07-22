@@ -1,5 +1,5 @@
 use std::fs;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use clap::Parser;
 
@@ -8,6 +8,7 @@ use log::info;
 use openssl::rsa::Rsa;
 
 use tokio::io;
+use tokio::sync::Mutex;
 
 use url::Url;
 use osp_data::registry::DataTypeRegistry;
@@ -39,7 +40,7 @@ async fn main() -> io::Result<()> {
 
     let args = Args::parse();
 
-    let key_contents = fs::read_to_string(args.private_key.clone()).expect(format!("Unable to open private key file {}", args.private_key).as_str());
+    let key_contents = fs::read_to_string(args.private_key.clone()).unwrap_or_else(|_| panic!("Unable to open private key file {}", args.private_key));
     let key = Rsa::private_key_from_pem(key_contents.as_bytes()).unwrap();
 
     let reg_url = Url::parse(args.url.as_str()).unwrap();

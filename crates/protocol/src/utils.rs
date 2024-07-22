@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum ConnectionType {
     Unknown = 0,
     Client = 1,
@@ -8,11 +8,11 @@ pub enum ConnectionType {
 }
 
 impl From<u8> for ConnectionType {
-    fn from(t: u8) -> ConnectionType {
+    fn from(t: u8) -> Self {
         match t {
-            1 => ConnectionType::Client,
-            2 => ConnectionType::Server,
-            _ => ConnectionType::Unknown
+            1 => Self::Client,
+            2 => Self::Server,
+            _ => Self::Unknown
         }
     }
 }
@@ -27,7 +27,7 @@ impl From<&ConnectionType> for u8 {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum ConnectionIntent {
     Subscribe,
     TransferData,
@@ -37,9 +37,9 @@ pub enum ConnectionIntent {
 impl From<u8> for ConnectionIntent {
     fn from(i: u8) -> Self {
         match i {
-            1 => ConnectionIntent::Subscribe,
-            2 => ConnectionIntent::TransferData,
-            _ => ConnectionIntent::Unknown,
+            1 => Self::Subscribe,
+            2 => Self::TransferData,
+            _ => Self::Unknown,
         }
     }
 }
@@ -57,13 +57,13 @@ impl From<&ConnectionIntent> for u8 {
 impl Display for ConnectionIntent {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            ConnectionIntent::Subscribe => {
+            Self::Subscribe => {
                 write!(f, "subscribe")
             }
-            ConnectionIntent::TransferData => {
+            Self::TransferData => {
                 write!(f, "transfer-data")
             }
-            ConnectionIntent::Unknown => {
+            Self::Unknown => {
                 write!(f, "unknown")
             }
         }

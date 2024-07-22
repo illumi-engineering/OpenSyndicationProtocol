@@ -1,8 +1,20 @@
-#![feature(thin_box)]
+#![warn(clippy::complexity)]
+#![warn(clippy::correctness)]
+#![warn(clippy::nursery)]
+#![warn(clippy::pedantic)]
+#![warn(clippy::perf)]
+#![warn(clippy::style)]
+#![warn(clippy::suspicious)]
+// followings are from clippy::restriction
+#![warn(clippy::missing_errors_doc)]
+#![warn(clippy::missing_panics_doc)]
+#![warn(clippy::missing_safety_doc)]
+#![warn(clippy::unwrap_used)]
+#![warn(clippy::format_push_string)]
+#![warn(clippy::get_unwrap)]
 
 pub mod registry;
 
-use std::ops::Deref;
 use bincode::{Decode, Encode};
 use bincode::config::Configuration;
 use bincode::error::{DecodeError, EncodeError};
@@ -39,7 +51,7 @@ pub trait Data : Send + Downcast {
 impl_downcast!(Data);
 
 /// Implement data methods more easily.
-/// [Uuid], [std::str::FromStr] and [Data] must be in scope
+/// [`Uuid`], [`std::str::FromStr`] and [`Data`] must be in scope
 ///
 /// **Usage:** (Given some concrete type `YourType`) `impl_data!(YourType, "your-type-uuid");`
 #[macro_export]
@@ -56,8 +68,8 @@ macro_rules! impl_data {
     };
 }
 
-/// A meta type that contains encode/decode methods for writing [Data] to
-/// a buffer, handlers assigned to [TData], and associated markers.
+/// A meta type that contains encode/decode methods for writing [`Data`] to
+/// a buffer, handlers assigned to `TData`, and associated markers.
 pub struct DataType<TData>
 where
     TData : Data + ?Sized,
@@ -69,20 +81,20 @@ impl<TData> DataType<TData>
 where
     TData : Data + ?Sized
 {
-    pub fn new() -> Self {
-        DataType::<TData> {
+    #[must_use] pub fn new() -> Self {
+        Self {
             handlers: Vec::new()
         }
     }
 
-    pub fn get_id(&self) -> Uuid
+    #[must_use] pub fn get_id(&self) -> Uuid
     where
         TData : Sized
     {
         TData::get_id_static()
     }
 
-    /// Decode a [TData] off a buffer
+    /// Decode a [`TData`] off a buffer
     pub fn decode_from_bytes(&self, buf: &Bytes) -> Result<(Box<TData>, usize), DecodeError>
     where
         TData : Decode,
@@ -92,7 +104,7 @@ where
         Ok((Box::new(res.0), res.1))
     }
 
-    /// Encode a [TData] onto a buffer
+    /// Encode a [`TData`] onto a buffer
     pub fn encode_to_bytes(&self, buf: &mut BytesMut, obj: TData) -> Result<usize, EncodeError>
     where
         TData : Encode + Sized,
@@ -102,11 +114,22 @@ where
         Ok(len)
     }
 
+    /// Run all handlers registered for this type on `obj`
+    #[allow(clippy::needless_pass_by_value)]
     pub fn handle(&self, obj: Box<&TData>)
     {
         for handler in &self.handlers {
-            handler.handle(obj.clone())
+            handler.handle(obj.clone());
         }
+    }
+}
+
+impl<TData> Default for DataType<TData>
+where
+    TData : Data + ?Sized
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -121,7 +144,7 @@ impl_downcast!(sync DataHandler<TData> where TData : Data + 'static);
 
 impl<TData : Data + ?Sized, F: Fn(Box<&TData>) + Send + Sync + 'static> DataHandler<TData> for F {
     fn handle(&self, obj: Box<&TData>) {
-        self(obj)
+        self(obj);
     }
 }
 
