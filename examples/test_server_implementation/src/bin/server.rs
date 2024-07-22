@@ -61,7 +61,7 @@ async fn main() -> io::Result<()> {
 
     for uri in args.subscribe_to {
         let node_rc_subscribe = connection_node.clone();
-        let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
+        let osp_url = OSPUrl::try_from(Url::parse(uri.as_str()).unwrap())?;
         info!("Subscribing to server: {osp_url}");
         let node = node_rc_subscribe.lock().await;
         node.clone().subscribe_to(osp_url).await?;
