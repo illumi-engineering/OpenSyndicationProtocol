@@ -1,7 +1,16 @@
 use std::net::{SocketAddr, SocketAddrV4};
-use std::{io};
+use std::sync::Arc;
+
 use clap::Parser;
-use osp_server_sdk::OSProtocolNode;
+use log::info;
+
+use tokio::io;
+use tokio::sync::Mutex;
+
+use url::Url;
+
+use osp_protocol::OSPUrl;
+use osp_server_sdk::Node;
 
 /// Test implementation of an Open Syndication Protocol server node
 #[derive(Parser, Debug)]
@@ -22,10 +31,10 @@ struct Args {
     /// Used to identify myself during the handshake
     #[arg(long)]
     hostname: String,
-    //
-    // /// Servers to open outbound connections to
-    // #[arg(long)]
-    // push_to: Vec<String>
+
+    /// Servers to subscribe to data updates from
+    #[arg(long)]
+    subscribe_to: Vec<String>
 }
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -35,38 +44,28 @@ async fn main() -> io::Result<()> {
 
     let args = Args::parse();
     let addr = SocketAddrV4::new(args.bind.parse().expect("Invalid bind address"), args.port);
-    let mut node = OSProtocolNode::new();
+    let mut node = Node::new();
     node.set_addr(SocketAddr::from(addr));
-    node.set_private_key_file(args.private_key);
+    node.set_private_key_file(args.private_key).await?;
     node.set_hostname(args.hostname);
 
 
-    let mut connection_node = node.init();
-    connection_node.listen(|connection, state| async move {
+    let connection_node = Arc::new(Mutex::new(node.init().await));
 
-        Ok(())
-    }).await?;
+    let node_rc_listen = connection_node.clone();
+    tokio::spawn(async move {
+        let node = node_rc_listen.lock().await;
+        node.listen().await
+    });
+
+
+    for uri in args.subscribe_to {
+        let node_rc_subscribe = connection_node.clone();
+        let osp_url = OSPUrl::try_from(Url::parse(uri.as_str()).unwrap())?;
+        info!("Subscribing to server: {osp_url}");
+        let node = node_rc_subscribe.lock().await;
+        node.clone().subscribe_to(osp_url).await?;
+    }
 
     Ok(())
-
-    // for uri in args.push_to {
-    //     let osp_url = OSPUrl::from(Url::parse(uri.as_str()).unwrap());
-    //     info!("url: {osp_url}");
-    //     let n = Arc::clone(&node);
-    //     GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
-    //     std::thread::spawn(move || {
-    //         // We need to catch panics to reliably signal exit of a thread
-    //         let result = panic::catch_unwind(move || {
-    //             info!("Starting outbound thread");
-    //             n.lock().unwrap().test_outbound(osp_url);
-    //         });
-    //         // process errors
-    //         match result {
-    //             _ => {}
-    //         }
-    //         // signal thread exit
-    //         GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
-    //     });
-    // }
-
 }

@@ -1,20 +1,24 @@
 use std::fmt::{Display, Formatter};
+use tokio::io;
 use url::Url;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
+#[allow(clippy::module_name_repetitions)]
 pub struct OSPUrl {
     pub domain: String,
     pub port: u16,
 }
 
-impl From<Url> for OSPUrl {
-    fn from(value: Url) -> Self {
+impl TryFrom<Url> for OSPUrl {
+    type Error = io::Error;
+
+    fn try_from(value: Url) -> io::Result<Self> {
         assert_eq!(value.scheme(), "osp");
 
-        OSPUrl {
-            domain: value.domain().unwrap().to_string(),
-            port: value.port().unwrap()
-        }
+        Ok(Self {
+            domain: value.domain().expect("Url must have domain").to_string(),
+            port: value.port().expect("Url must have port")
+        })
     }
 }
 
@@ -31,13 +35,17 @@ mod tests {
     use crate::OSPUrl;
 
     #[test]
-    fn test_url_parse() {
+    fn test_url_parse() -> io::Result<()> {
         let expected = OSPUrl {
             domain: "test-url.com".to_string(),
             port: 42069,
         };
 
-        let test_val = OSPUrl::from(Url::parse("osp://test-url.com:42069").unwrap());
+        let test_val = OSPUrl::try_from(
+            Url::parse("osp://test-url.com:42069")
+                .map_err(|e| { io::Error::new(io::ErrorKind::InvalidData, e.to_string()) })?
+        )?;
         assert_eq!(expected, test_val);
+        Ok(())
     }
 }

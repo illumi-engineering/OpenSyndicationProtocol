@@ -230,15 +230,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
-name = "derive-where"
-version = "1.2.7"
+name = "downcast-rs"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62d671cc41a825ebabc75757b62d3d168c577f9149b2d49ece1dad1f72119d25"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
+checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
+
+[[package]]
+name = "dyn-clone"
+version = "1.0.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
 
 [[package]]
 name = "enum-as-inner"
@@ -593,22 +594,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "osp_client_sdk"
-version = "0.0.1"
-dependencies = [
- "osp_protocol",
-]
-
-[[package]]
 name = "osp_data"
 version = "0.0.1"
 dependencies = [
  "bincode",
  "bytes",
- "derive-where",
- "serde",
- "tokio",
- "tokio-byteorder",
+ "downcast-rs",
+ "dyn-clone",
  "uuid",
 ]
 
@@ -631,8 +623,11 @@ dependencies = [
 name = "osp_server_sdk"
 version = "0.0.1"
 dependencies = [
+ "bincode",
+ "bytes",
  "log",
  "openssl",
+ "osp_data",
  "osp_protocol",
  "tokio",
  "trust-dns-resolver",
@@ -886,6 +881,7 @@ dependencies = [
  "colog",
  "log",
  "openssl",
+ "osp_data",
  "osp_protocol",
  "osp_server_sdk",
  "tokio",

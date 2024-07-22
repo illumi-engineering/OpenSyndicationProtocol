@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::marker::PhantomData;
 
 use bytes::{Buf, BufMut, BytesMut};
@@ -13,25 +14,29 @@ pub mod data;
 
 /// The maximum length a packet can be. Any data that needs to be sent and is
 /// longer than this maximum should be chunked into multiple packets.
-const PACKET_MAX_LENGTH: usize = 8 * 1024 * 1024;
+pub const PACKET_MAX_LENGTH: usize = 8 * 1024 * 1024;
 
-/// This trait is used to serialize from a packet to a [BytesMut]
+/// This trait is used to serialize from a packet to a [`BytesMut`]
+#[allow(clippy::module_name_repetitions)]
 pub trait SerializePacket {
-    /// Serialize to a [BytesMut]
+    /// Serialize to a [`BytesMut`]
+    ///
+    /// # Errors
+    /// If serialization fails
     fn serialize(&self, buf: &mut BytesMut) -> io::Result<usize>;
 
     /// Write a `String` to `buf` and return how many bytes were written.
     fn write_string(&self, buf: &mut BytesMut, string: &String) -> usize where Self : Sized {
         let bytes = string.as_bytes();
-        buf.put_u16(bytes.len() as u16);
-        buf.put_slice(&bytes);
-        2 + bytes.len() // u16 = 2 bytes
+        buf.put_u64(bytes.len() as u64);
+        buf.put_slice(bytes);
+        8 + bytes.len() // u64 = 8 bytes
     }
 
     /// Write an `Option<String>` to `buf` and return how many bytes were
     /// written.
     fn write_optional_string(&self, buf: &mut BytesMut, string: &Option<String>) -> usize where Self: Sized {
-        buf.put_u8(string.is_some() as u8);
+        buf.put_u8(u8::from(string.is_some()));
         let mut bytes_written = 1;
         if let Some(str) = string {
             bytes_written += self.write_string(buf, str);
@@ -49,8 +54,8 @@ pub trait SerializePacket {
 
     /// Write an `Option<Uuid>` to `buf` and return how many bytes were written.
     fn write_optional_uuid(&self, buf: &mut BytesMut, uuid: &Option<Uuid>) -> usize where Self: Sized {
-        buf.put_u8(uuid.is_some() as u8);
-        let mut bytes_written = 1;
+        buf.put_u8(u8::from(uuid.is_some()));
+        let mut bytes_written = 8;
         if let Some(id) = uuid {
             bytes_written += self.write_uuid(buf, id);
         }
@@ -58,21 +63,31 @@ pub trait SerializePacket {
     }
 }
 
-/// Trait for a packet that can be deserialized from a [BytesMut].
+/// Trait for a packet that can be deserialized from a [`BytesMut`].
+#[allow(clippy::module_name_repetitions)]
 pub trait DeserializePacket {
     /// The type that this deserializes to
     type Output;
 
-    /// Deserialize from a [BytesMut]
+    /// Deserialize from a [`BytesMut`]
+    ///
+    /// # Errors
+    /// If Deserialization fails.
     fn deserialize(buf: &mut BytesMut) -> io::Result<Self::Output>;
 
-    /// From a given [BytesMut], read the next length (u16) and extract the
+    /// From a given [`BytesMut`], read the next length (u16) and extract the
     /// string bytes, returning a [String].
+    ///
+    /// # Errors
+    /// Returns [`io::ErrorKind::InvalidData`] if the string is not valid UTF-8
+    ///
+    /// # Panics
+    /// If the serialized length it decodes is invalid
     fn read_string(buf: &mut BytesMut) -> io::Result<String> {
-        let length = buf.get_u16();
+        let length = buf.get_u64();
 
         // Given the length of our string, only read in that quantity of bytes
-        let mut bytes = vec![0u8; length as usize];
+        let mut bytes = vec![0u8; usize::try_from(length).map_err(|e| { io::Error::new(ErrorKind::InvalidData, e.to_string()) })?];
         buf.copy_to_slice(&mut bytes);
 
         // And attempt to decode it as UTF8
@@ -80,6 +95,9 @@ pub trait DeserializePacket {
     }
 
     /// Read an `Option<String>` from `buf`
+    ///
+    /// # Errors
+    /// If the inner [`Self::read_string`] errors
     fn read_optional_string(buf: &mut BytesMut) -> io::Result<Option<String>> {
         Ok(if buf.get_u8() != 0 { // if the boolean is set read the optional value
             Some(Self::read_string(buf)?)
@@ -99,19 +117,26 @@ pub trait DeserializePacket {
     }
 }
 
-/// A tokio codec for deserializing packets that implement [DeserializePacket]
-/// in a [FramedRead]. For more information see [tokio_util::codec].
+/// A tokio codec for deserializing packets that implement [`DeserializePacket`]
+/// in a [`FramedRead`]. For more information see [`tokio_util::codec`].
 ///
-/// [FramedRead]: tokio_util::codec::FramedRead
+/// [`FramedRead`]: tokio_util::codec::FramedRead
+#[allow(clippy::module_name_repetitions)]
 pub struct PacketDecoder<PacketType: DeserializePacket> {
     _packet_type: PhantomData<PacketType>
 }
 
-impl<PacketType: DeserializePacket> PacketDecoder<PacketType> {
-    pub fn new() -> PacketDecoder<PacketType> {
-        PacketDecoder::<PacketType> {
-            _packet_type: PhantomData::default(),
+impl<PacketType : DeserializePacket> PacketDecoder<PacketType> {
+    #[must_use] pub const fn new() -> Self {
+        Self {
+            _packet_type: PhantomData,
         }
+    }
+}
+
+impl<PacketType : DeserializePacket> Default for PacketDecoder<PacketType> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -135,7 +160,7 @@ impl<PacketType: DeserializePacket> Decoder for PacketDecoder<PacketType> {
         if length > PACKET_MAX_LENGTH {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
-                format!("Frame of length {} is too large.", length)
+                format!("Frame of length {length} is too large.")
             ));
         }
 
@@ -162,15 +187,26 @@ impl<PacketType: DeserializePacket> Decoder for PacketDecoder<PacketType> {
     }
 }
 
+/// A tokio codec for serializing packets that implement [`SerializePacket`]
+/// in a [`FramedWrite`]. For more information see [`tokio_util::codec`].
+///
+/// [`FramedWrite`]: tokio_util::codec::FramedWrite
+#[allow(clippy::module_name_repetitions)]
 pub struct PacketEncoder<PacketType : SerializePacket> {
     _packet_type: PhantomData<PacketType>,
 }
 
-impl<PacketType: SerializePacket> PacketEncoder<PacketType> {
-    pub fn new() -> Self {
-        PacketEncoder::<PacketType> {
-            _packet_type: PhantomData::default(),
+impl<PacketType : SerializePacket> PacketEncoder<PacketType> {
+    #[must_use] pub const fn new() -> Self {
+        Self {
+            _packet_type: PhantomData,
         }
+    }
+}
+
+impl<PacketType : SerializePacket> Default for PacketEncoder<PacketType> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -178,8 +214,8 @@ impl<PacketType: SerializePacket> Encoder<PacketType> for PacketEncoder<PacketTy
     type Error = io::Error;
 
     fn encode(&mut self, item: PacketType, dst: &mut BytesMut) -> Result<(), Self::Error> {
-        let mut buf = &mut BytesMut::with_capacity(PACKET_MAX_LENGTH);
-        item.serialize(& mut buf)?;
+        let buf = &mut BytesMut::with_capacity(PACKET_MAX_LENGTH);
+        item.serialize(buf)?;
 
         if buf.len() > PACKET_MAX_LENGTH {
             return Err(io::Error::new(
@@ -190,6 +226,7 @@ impl<PacketType: SerializePacket> Encoder<PacketType> for PacketEncoder<PacketTy
 
         // Convert the length into a byte array.
         // The cast to u32 cannot overflow due to the length check above.
+        #[allow(clippy::cast_possible_truncation)]
         let len_slice = u32::to_le_bytes(buf.len() as u32);
 
         // Reserve space in the buffer.
@@ -210,35 +247,35 @@ mod tests {
     use crate::packet::{DeserializePacket, PACKET_MAX_LENGTH, SerializePacket};
 
     /// A basic test packet for validating basic serialization and
-    /// deserialization of values that implement [SerializePacket] and
-    /// [DeserializePacket].
+    /// deserialization of values that implement [`SerializePacket`] and
+    /// [`DeserializePacket`].
     #[derive(PartialEq, Debug)]
     struct TestPacket {
-        test_bool: bool,
-        test_int: u8,
-        test_string: String,
+        bool: bool,
+        int: u8,
+        string: String,
     }
 
     impl SerializePacket for TestPacket {
         fn serialize(&self, buf: &mut BytesMut) -> io::Result<usize> {
-            buf.put_u8(self.test_bool as u8);
+            buf.put_u8(u8::from(self.bool));
             let mut bytes_written = 1;
-            buf.put_u8(self.test_int);
+            buf.put_u8(self.int);
             bytes_written += 1;
 
-            bytes_written += self.write_string(buf, &self.test_string);
+            bytes_written += self.write_string(buf, &self.string);
             Ok(bytes_written)
         }
     }
 
     impl DeserializePacket for TestPacket {
-        type Output = TestPacket;
+        type Output = Self;
 
         fn deserialize(buf: &mut BytesMut) -> io::Result<Self::Output> {
-            Ok(TestPacket {
-                test_bool: buf.get_u8() != 0,
-                test_int: buf.get_u8(),
-                test_string: Self::read_string(buf)?,
+            Ok(Self {
+                bool: buf.get_u8() != 0,
+                int: buf.get_u8(),
+                string: Self::read_string(buf)?,
             })
         }
     }
@@ -246,46 +283,46 @@ mod tests {
     /// A test packet for testing serialization/deserialization of [Uuid].
     #[derive(PartialEq, Debug)]
     struct TestUuidPacket {
-        test_uuid: Uuid,
+        uuid: Uuid,
     }
 
     impl SerializePacket for TestUuidPacket {
         fn serialize(&self, buf: &mut BytesMut) -> io::Result<usize> {
-            let bytes_written = self.write_uuid(buf, &self.test_uuid);
+            let bytes_written = self.write_uuid(buf, &self.uuid);
             Ok(bytes_written)
         }
     }
 
     impl DeserializePacket for TestUuidPacket {
-        type Output = TestUuidPacket;
+        type Output = Self;
 
         fn deserialize(buf: &mut BytesMut) -> io::Result<Self::Output> {
-            Ok(TestUuidPacket {
-                test_uuid: Self::read_uuid(buf),
+            Ok(Self {
+                uuid: Self::read_uuid(buf),
             })
         }
     }
 
-    /// Create a test packet whose values correspond to [TEST_PACKET_BYTES]
+    /// Create a test packet whose values correspond to [`TEST_PACKET_BYTES`]
     fn create_test_packet() -> TestPacket {
         TestPacket {
-            test_bool: true,
-            test_int: 32u8,
-            test_string: String::from("hello"),
+            bool: true,
+            int: 32u8,
+            string: String::from("hello"),
         }
     }
 
-    /// A raw byte representation of the packet [create_test_packet] creates
-    ///                                   test_bool: true
-    ///                                   |    test_int: 32u8
-    ///                                   |    |    [test_string: "hello"]
-    ///                                   |    |    [len, data == "hello"]
-    ///                                   |    |     |    |
-    ///                                   V    V     V    V
-    const TEST_PACKET_BYTES: &[u8; 9] = &[1u8, 32u8, 0,5, 104,101,108,108,111];
+    /// A raw byte representation of the packet [`create_test_packet`] creates
+    //                                    bool: true
+    //                                    |    int: 32u8
+    //                                    |    |     [string: "hello"]
+    //                                    |    |     [len (usize->u64) data == "hello"]
+    //                                    |    |      |                |
+    //                                    V    V      V                V
+    const TEST_PACKET_BYTES: &[u8; 15] = &[1u8, 32u8, 0,0,0,0,0,0,0,5, 104,101,108,108,111];
 
     /// This test checks two things:
-    /// - Whether the data serialized from a [SerializePacket] is accurate on
+    /// - Whether the data serialized from a [`SerializePacket`] is accurate on
     ///   the resulting buffer
     /// - Whether the serialize function returns the correct amount of bytes
     ///   written
@@ -301,7 +338,7 @@ mod tests {
     }
 
     /// This test only checks whether data deserialized from the buffer matches
-    /// the expected value of the [TestPacket]
+    /// the expected value of the [`TestPacket`]
     #[test]
     fn test_basic_deserialization() -> io::Result<()> {
         let buf = &mut BytesMut::from(TEST_PACKET_BYTES.as_slice());
@@ -316,7 +353,7 @@ mod tests {
         let buf = &mut BytesMut::with_capacity(PACKET_MAX_LENGTH);
         let uuid = Uuid::new_v4();
         let packet = TestUuidPacket {
-            test_uuid: uuid
+            uuid,
         };
 
         // serialize the packet
