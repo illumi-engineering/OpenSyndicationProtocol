@@ -30,7 +30,7 @@ pub trait SerializePacket {
         let bytes = string.as_bytes();
         buf.put_u64(bytes.len() as u64);
         buf.put_slice(bytes);
-        2 + bytes.len() // u16 = 2 bytes
+        8 + bytes.len() // u64 = 8 bytes
     }
 
     /// Write an `Option<String>` to `buf` and return how many bytes were
@@ -55,7 +55,7 @@ pub trait SerializePacket {
     /// Write an `Option<Uuid>` to `buf` and return how many bytes were written.
     fn write_optional_uuid(&self, buf: &mut BytesMut, uuid: &Option<Uuid>) -> usize where Self: Sized {
         buf.put_u8(u8::from(uuid.is_some()));
-        let mut bytes_written = 1;
+        let mut bytes_written = 8;
         if let Some(id) = uuid {
             bytes_written += self.write_uuid(buf, id);
         }
@@ -315,11 +315,11 @@ mod tests {
     /// A raw byte representation of the packet [`create_test_packet`] creates
     //                                    bool: true
     //                                    |    int: 32u8
-    //                                    |    |    [string: "hello"]
-    //                                    |    |    [len, data == "hello"]
-    //                                    |    |     |    |
-    //                                    V    V     V    V
-    const TEST_PACKET_BYTES: &[u8; 9] = &[1u8, 32u8, 0,5, 104,101,108,108,111];
+    //                                    |    |     [string: "hello"]
+    //                                    |    |     [len (usize->u64) data == "hello"]
+    //                                    |    |      |                |
+    //                                    V    V      V                V
+    const TEST_PACKET_BYTES: &[u8; 15] = &[1u8, 32u8, 0,0,0,0,0,0,0,5, 104,101,108,108,111];
 
     /// This test checks two things:
     /// - Whether the data serialized from a [`SerializePacket`] is accurate on
